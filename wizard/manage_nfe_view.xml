@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<openerp>
+  <data>
+
+    <record id="view_manage_nfe" model="ir.ui.view">
+      <field name="name">NF-e</field>
+      <field name="model">l10n_br_nfe.manage_nfe</field>
+      <field name="type">form</field>
+      <field name="arch" type="xml">
+        <form string="NF-e">
+
+          <group col="5">
+
+            <group colspan="5" states="init">
+              <label colspan="4" width="130"
+                string="Este assistente fornece ações para comunicação de NF-e." />
+              <field name="state" invisible="1" />
+            </group>
+
+            <group colspan="5" states="down">
+              <label string="Comunicação não pode ser realizada no momento."
+                colspan="4" />
+            </group>
+
+            <group colspan="5" states="failed">
+              <label string="Algumas operações não puderam ser realizadas."
+                colspan="4" />
+            </group>
+
+            <group colspan="5" states="nothing">
+              <label string="Nada a fazer." colspan="4" />
+            </group>
+
+            <group colspan="5" states="done">
+              <label string="Operação realizada com sucesso."
+                colspan="4" />
+            </group>
+
+            <field name="invoice_status" colspan="4" nolabel="1"
+              mode="tree" width="550" height="200" readonly="1">
+              <tree string="Notas Fiscais">
+                <field name="number" />
+                <field name="partner_id" />
+                <field name="company_id" />
+                <field name="nfe_status" />
+                <field name="nfe_retorno" />
+              </tree>
+            </field>
+
+            <group colspan="7" col="7">
+              <separator string="" colspan="7" />
+              <label colspan="1" width="200" />
+              <button special="cancel" string="Fechar" icon="gtk-cancel" />
+
+              <button name="send_nfe" string="Enviar NF-e" type="object"
+                states="init" icon="gtk-go-forward" />
+              <button name="cancel_nfe" string="Cancelar NF-e"
+                type="object" states="init" icon="gtk-ok" />
+              <button name="destroy_nfe_number" string="Inutilizar Número de NF-e"
+                type="object" states="init" icon="gtk-ok" />
+              <button name="check_nfe_status" string="Verificar Situação de NF-e"
+                type="object" states="init" icon="gtk-ok" />
+              <button name="check_service_status" string="Verificar Situação do Serviço"
+                type="object" states="init" icon="gtk-ok" />
+            </group>
+
+          </group>
+
+        </form>
+      </field>
+    </record>
+
+    <record id="action_view_manage_nfe" model="ir.actions.act_window">
+      <field name="name">NF-e</field>
+      <field name="res_model">l10n_br_nfe.manage_nfe</field>
+      <field name="view_type">form</field>
+      <field name="view_mode">form</field>
+      <field name="target">new</field>
+    </record>
+
+    <act_window id="manage_nfe" key2="client_action_multi"
+      name="NF-e" res_model="l10n_br_nfe.manage_nfe" src_model="account.invoice"
+      view_id="view_manage_nfe" view_mode="form" target="new" view_type="form"
+      groups="base.group_extended" />
+
+  </data>
+</openerp>

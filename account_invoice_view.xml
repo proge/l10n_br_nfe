@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<openerp>
+  <data>
+
+    <record model="ir.ui.view" id="view_l10n_br_nfe_account_invoice_form">
+      <field name="name">l10n_br_nfe.account_invoice.form</field>
+      <field name="model">account.invoice</field>
+      <field name="inherit_id" ref="account.invoice_form" />
+      <field name="arch" type="xml">
+        <xpath
+          expr="/form/notebook/page/notebook/page/group[@name='l10n_br_nf']/field[@name='nfe_status']"
+          position="after">
+          <field name="nfe_retorno" />
+        </xpath>
+      </field>
+    </record>
+
+    <record model="ir.ui.view" id="view_l10n_br_nfe_account_invoice_tree">
+      <field name="name">l10n_br_nfe.account_invoice.tree</field>
+      <field name="model">account.invoice</field>
+      <field name="inherit_id" ref="account.invoice_tree" />
+      <field name="arch" type="xml">
+        <field position="before" name="state">
+          <field name="nfe_status" />
+        </field>
+      </field>
+    </record>
+
+  </data>
+</openerp>
