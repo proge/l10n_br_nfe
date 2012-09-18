@@ -41,6 +41,7 @@ NFE_STATUS = {
     'cancel_failed': 'Falhou ao cancelar',
     'destroy_ok': 'Numeração inutilizada',
     'destroy_failed': 'Falhou ao inutilizar numeração',
+    'check_nfe_failed': 'Falhou ao obter situação atual',
     }
 
 
@@ -337,9 +338,252 @@ class manage_nfe(osv.osv_memory):
                                                           uid,
                                                           [inv.company_id.id]
                                                           )[0]
-            server_host = company.nfe_server_host
 
-            if self.check_server(cr, uid, ids, server_host):
+            cert_file_content = base64.decodestring(company.nfe_cert_file)
+
+            caminho_temporario = u'/tmp/'
+            cert_file = caminho_temporario + uuid4().hex
+            arq_tmp = open(cert_file, 'w')
+            arq_tmp.write(cert_file_content)
+            arq_tmp.close()
+
+            cert_password = company.nfe_cert_password
+
+            p = ProcessadorNFe()
+            p.versao = u'2.00'
+            p.estado = u'SP'
+            p.certificado.arquivo = cert_file
+            p.certificado.senha = cert_password
+            p.salvar_arquivos = True
+            p.contingencia_SCAN = False
+            p.caminho = u''
+
+            # O retorno de cada webservice é um dicionário
+            # estruturado da seguinte maneira:
+            # { TIPO_DO_WS_EXECUTADO: {
+            #       u'envio'   : InstanciaDaMensagemDeEnvio,
+            #       u'resposta': InstanciaDaMensagemDeResposta,
+            #       }
+            # }
+            process = p.cancelar_nota(
+                chave_nfe=u'35100411111111111111551010000000271123456789',
+                numero_protocolo=u'135100018751878',
+                justificativa=u'Somente um teste de cancelamento'
+                )
+
+            code, title, content = 403, 'Gone', ''
+
+            # FIXME: check result instead of code
+            if code == 200:
+                canceled_invoices.append(inv.id)
+
+                data = {'nfe_status': NFE_STATUS['cancel_ok']}
+
+            else:
+                failed_invoices.append(inv.id)
+
+                data = {'nfe_status': NFE_STATUS['cancel_failed']}
+
+            data['nfe_retorno'] = process.resposta.reason
+            self.pool.get('account.invoice').write(cr,
+                                                   uid,
+                                                   inv.id,
+                                                   data,
+                                                   context=context
+                                                   )
+
+        if len(canceled_invoices) == 0 and len(failed_invoices) == 0:
+            result = {'state': 'nothing'}
+        elif len(failed_invoices) > 0:
+            result = {'state': 'failed'}
+        else:
+            result = {'state': 'done'}
+
+        self.write(cr, uid, ids, result)
+
+        return True
+
+    def destroy_nfe_number(self, cr, uid, ids, context=None):
+        """Destroy NF-e number"""
+
+        destroyed_invoices = []
+        failed_invoices = []
+
+        inv_obj = self.pool.get('account.invoice')
+        active_ids = context.get('active_ids', [])
+
+        conditions = [('id', 'in', active_ids),
+                      ('nfe_status', '=', NFE_STATUS['send_ok'])]
+        invoices_to_cancel = inv_obj.search(cr, uid, conditions)
+
+        for inv in inv_obj.browse(cr, uid, invoices_to_cancel,
+                                  context=context):
+            company = self.pool.get('res.company').browse(cr,
+                                                          uid,
+                                                          [inv.company_id.id]
+                                                          )[0]
+
+            cert_file_content = base64.decodestring(company.nfe_cert_file)
+
+            caminho_temporario = u'/tmp/'
+            cert_file = caminho_temporario + uuid4().hex
+            arq_tmp = open(cert_file, 'w')
+            arq_tmp.write(cert_file_content)
+            arq_tmp.close()
+
+            cert_password = company.nfe_cert_password
+
+            p = ProcessadorNFe()
+            p.versao = u'2.00'
+            p.estado = u'SP'
+            p.certificado.arquivo = cert_file
+            p.certificado.senha = cert_password
+            p.salvar_arquivos = True
+            p.contingencia_SCAN = False
+            p.caminho = u''
+
+            #
+            # O retorno de cada webservice é um dicionário
+            # estruturado da seguinte maneira:
+            # { TIPO_DO_WS_EXECUTADO: {
+            #       u'envio'   : InstanciaDaMensagemDeEnvio,
+            #       u'resposta': InstanciaDaMensagemDeResposta,
+            #       }
+            # }
+            #
+            process = p.inutilizar_nota(cnpj=u'11111111111111',
+                serie=u'101',
+                numero_inicial=18,
+                justificativa=u'Testando a inutilização de NF-e')
+
+            code, title, content = 403, 'Gone', ''
+
+            # FIXME: check result instead of code
+            if code == 200:
+                destroyed_invoices.append(inv.id)
+
+                data = {'nfe_status': NFE_STATUS['destroy_ok']}
+
+            else:
+                failed_invoices.append(inv.id)
+
+                data = {'nfe_status': NFE_STATUS['destroy_failed']}
+
+            data['nfe_retorno'] = process.resposta.reason
+            self.pool.get('account.invoice').write(cr,
+                                                   uid,
+                                                   inv.id,
+                                                   data,
+                                                   context=context
+                                                   )
+
+        if len(destroyed_invoices) == 0 and len(failed_invoices) == 0:
+            result = {'state': 'nothing'}
+        elif len(failed_invoices) > 0:
+            result = {'state': 'failed'}
+        else:
+            result = {'state': 'done'}
+
+        self.write(cr, uid, ids, result)
+
+        return True
+
+    def check_nfe_status(self, cr, uid, ids, context=None):
+        """Check NF-e status"""
+        inv_obj = self.pool.get('account.invoice')
+        active_ids = context.get('active_ids', [])
+        failed = False
+
+        for inv in inv_obj.browse(cr, uid, active_ids,
+                                  context=context):
+
+            company = self.pool.get('res.company'
+                                    ).browse(cr,
+                                             uid,
+                                             [inv.company_id.id]
+                                             )[0]
+
+            cert_file_content = base64.decodestring(company.nfe_cert_file)
+
+            caminho_temporario = u'/tmp/'
+            cert_file = caminho_temporario + uuid4().hex
+            arq_tmp = open(cert_file, 'w')
+            arq_tmp.write(cert_file_content)
+            arq_tmp.close()
+
+            cert_password = company.nfe_cert_password
+
+            p = ProcessadorNFe()
+            p.versao = u'2.00'
+            p.estado = u'SP'
+            p.certificado.arquivo = cert_file
+            p.certificado.senha = cert_password
+            p.salvar_arquivos = True
+            p.contingencia_SCAN = False
+            p.caminho = u''
+
+            # O retorno de cada webservice é um dicionário
+            # estruturado da seguinte maneira:
+            # { TIPO_DO_WS_EXECUTADO: {
+            #       u'envio'   : InstanciaDaMensagemDeEnvio,
+            #       u'resposta': InstanciaDaMensagemDeResposta,
+            #       }
+            # }
+            process = p.consultar_nota(chave_nfe=u'35100411111111111111551010000000271123456789')
+
+            code, title, content = 403, 'Gone', ''
+
+            # FIXME: check result instead of code
+            if code != 200:
+                failed = True
+                data = {
+                    'nfe_retorno': NFE_STATUS['check_nfe_failed'] + ' - ' + 
+                        str(process.resposta.reason),
+                    }
+
+            else:
+                # TODO: use server result for nfe_status
+                data = {
+                    #'nfe_status': process.resposta.xml,
+                    'nfe_retorno': process.resposta.reason,
+                    }
+
+            self.pool.get('account.invoice').write(cr,
+                                                   uid,
+                                                   inv.id,
+                                                   data,
+                                                   context=context
+                                                   )
+
+        if failed:
+            result = {'state': 'failed'}
+        else:
+            result = {'state': 'done'}
+
+        self.write(cr, uid, ids, result)
+
+        return True
+
+    def check_service_status(self, cr, uid, ids, context=None):
+        """Check service status"""
+        company_services_up = []
+        company_services_down = []
+
+        inv_obj = self.pool.get('account.invoice')
+        active_ids = context.get('active_ids', [])
+
+        for inv in inv_obj.browse(cr, uid, active_ids,
+                                  context=context):
+
+            if inv.company_id.id not in company_services_up and \
+                inv.company_id.id not in company_services_down:
+
+                company = self.pool.get('res.company'
+                                        ).browse(cr,
+                                                 uid,
+                                                 [inv.company_id.id]
+                                                 )[0]
+
                 cert_file_content = base64.decodestring(company.nfe_cert_file)
 
                 caminho_temporario = u'/tmp/'
@@ -366,26 +610,17 @@ class manage_nfe(osv.osv_memory):
                 #       u'resposta': InstanciaDaMensagemDeResposta,
                 #       }
                 # }
-                process = p.cancelar_nota(
-                    chave_nfe=u'35100411111111111111551010000000271123456789',
-                    numero_protocolo=u'135100018751878',
-                    justificativa=u'Somente um teste de cancelamento'
-                    )
+                process = p.consultar_servico()
 
                 code, title, content = 403, 'Gone', ''
 
                 # FIXME: check result instead of code
                 if code == 200:
-                    canceled_invoices.append(inv.id)
-
-                    data = {'nfe_status': NFE_STATUS['cancel_ok']}
-
+                    company_services_up.append(inv.company_id.id)
                 else:
-                    failed_invoices.append(inv.id)
+                    company_services_down.append(inv.company_id.id)
 
-                    data = {'nfe_status': NFE_STATUS['cancel_failed']}
-
-                data['nfe_retorno'] = process.resposta.reason
+                data = {'nfe_retorno': process.resposta.reason}
                 self.pool.get('account.invoice').write(cr,
                                                        uid,
                                                        inv.id,
@@ -393,27 +628,15 @@ class manage_nfe(osv.osv_memory):
                                                        context=context
                                                        )
 
-        if len(canceled_invoices) == 0 and len(failed_invoices) == 0:
+        if len(company_services_up) == 0 and len(company_services_down) == 0:
             result = {'state': 'nothing'}
-        elif len(failed_invoices) > 0:
+        elif len(company_services_down) > 0:
             result = {'state': 'failed'}
         else:
             result = {'state': 'done'}
 
         self.write(cr, uid, ids, result)
 
-        return True
-
-    def destroy_nfe_number(self, cr, uid, ids, context=None):
-        """Destroy NF-e number"""
-        return True
-
-    def check_nfe_status(self, cr, uid, ids, context=None):
-        """Check NF-e status"""
-        return True
-
-    def check_service_status(self, cr, uid, ids, context=None):
-        """Check service status"""
         return True
 
 manage_nfe()
