@@ -9,7 +9,7 @@
       <field name="arch" type="xml">
         <form string="NF-e">
 
-          <group col="5">
+          <group col="5" states="init,down,failed,nothing,done">
 
             <group colspan="5" states="init">
               <label colspan="4" width="130"
@@ -54,9 +54,9 @@
 
               <button name="send_nfe" string="Enviar NF-e" type="object"
                 states="init" icon="gtk-go-forward" />
-              <button name="cancel_nfe" string="Cancelar NF-e"
+              <button name="justify_cancel" string="Cancelar NF-e"
                 type="object" states="init" icon="gtk-ok" />
-              <button name="destroy_nfe_number" string="Inutilizar Número de NF-e"
+              <button name="justify_destroy" string="Inutilizar Número de NF-e"
                 type="object" states="init" icon="gtk-ok" />
               <button name="check_nfe_status" string="Verificar Situação de NF-e"
                 type="object" states="init" icon="gtk-ok" />
@@ -64,6 +64,24 @@
                 type="object" states="init" icon="gtk-ok" />
             </group>
 
+          </group>
+
+          <group col="5" states="justify_cancel,justify_destroy">
+            <label string="Informe uma justificativa para realizar essa ação."
+              colspan="4" />
+
+            <field name="justification" colspan="5" />
+
+            <group colspan="5" col="5">
+              <separator string="" colspan="5" />
+              <label colspan="1" width="200" />
+              <button name="justify_back" string="Voltar" type="object"
+                icon="gtk-cancel" />
+              <button name="cancel_nfe" string="Confirmar cancelamento"
+                type="object" states="justify_cancel" icon="gtk-ok" />
+              <button name="destroy_nfe_number" string="Confirmar inutilização"
+                type="object" states="justify_destroy" icon="gtk-ok" />
+            </group>
           </group>
 
         </form>

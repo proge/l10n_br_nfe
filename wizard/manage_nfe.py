@@ -24,15 +24,15 @@
 from osv import fields, osv
 from tools.translate import _
 import base64
-import urllib
-import sys
+from unicodedata import normalize
+import re
+import string
 
 from uuid import uuid4
 import datetime
 
 from pysped_nfe import ProcessadorNFe
-from pysped_nfe.manual_401 import NFe_200, Det_200
-from pysped_nfe.webservices_flags import UF_CODIGO
+from pysped_nfe.manual_401 import NFe_200, Det_200, Vol_200, Dup_200
 
 NFE_STATUS = {
     'send_ok': 'Transmitida',
@@ -65,11 +65,14 @@ class manage_nfe(osv.osv_memory):
                                    ('down', 'down'),
                                    ('done', 'done'),
                                    ('failed', 'failed'),
+                                   ('justify_cancel', 'justify_cancel'),
+                                   ('justify_destroy', 'justify_destroy'),
                                    ('nothing', 'nothing'),
                                    ], 'state', readonly=True),
         'invoice_status': fields.many2many('account.invoice',
                                            string='Invoice Status',
                                            ),
+        'justification': fields.text('Justificativa'),
         }
     _defaults = {
         'state': 'init',
@@ -92,12 +95,31 @@ class manage_nfe(osv.osv_memory):
 
         return data
 
+    def _unaccent(self, text):
+        return normalize('NFKD', unicode(text)).encode('ASCII', 'ignore')
+
+    def justify_back(self, cr, uid, ids, context=None):
+        """Justify NF-e back"""
+        self.write(cr, uid, ids, {'state': 'init'})
+
+    def justify_cancel(self, cr, uid, ids, context=None):
+        """Justify NF-e cancel"""
+        self.write(cr, uid, ids, {'state': 'justify_cancel'})
+
+    def justify_destroy(self, cr, uid, ids, context=None):
+        """Justify NF-e number destruction"""
+        self.write(cr, uid, ids, {'state': 'justify_destroy'})
+
     def send_nfe(self, cr, uid, ids, context=None):
         """Send one or many NF-e"""
 
         sent_invoices = []
         unsent_invoices = []
 
+        #nfe_environment = 1 # produção
+        nfe_environment = 2 # homologação
+
+        partner_obj = self.pool.get('res.partner')
         inv_obj = self.pool.get('account.invoice')
         active_ids = context.get('active_ids', [])
 
@@ -111,6 +133,16 @@ class manage_nfe(osv.osv_memory):
                                                           [inv.company_id.id]
                                                           )[0]
 
+            company_id_list = [inv.company_id.partner_id.id]
+            company_addr = partner_obj.address_get(cr, uid, company_id_list,
+                                                   ['default'])
+            comp_addr_d = self.pool.get('res.partner.address').browse(
+                cr,
+                uid,
+                [company_addr['default']],
+                context={'lang': 'pt_BR'}
+                )[0]
+
             cert_file_content = base64.decodestring(company.nfe_cert_file)
 
             caminho_temporario = u'/tmp/'
@@ -120,8 +152,6 @@ class manage_nfe(osv.osv_memory):
             arq_tmp.close()
 
             cert_password = company.nfe_cert_password
-
-
 
             p = ProcessadorNFe()
             p.versao = u'2.00'
@@ -136,144 +166,596 @@ class manage_nfe(osv.osv_memory):
             n = NFe_200()
 
             # Identificação da NF-e
-            n.infNFe.ide.cUF.valor = UF_CODIGO[u'SP']
-            n.infNFe.ide.natOp.valor = u'Venda de produto do estabelecimento'
+            n.infNFe.ide.cUF.valor = comp_addr_d.state_id.ibge_code
+            if inv.cfop_ids:
+                n.infNFe.ide.natOp.valor = self._unaccent(
+                    inv.cfop_ids[0].small_name or ''
+                    )
+
+            today = datetime.datetime.now()
+            ibge_code = ('%s%s') % (
+                comp_addr_d.state_id.ibge_code,
+                comp_addr_d.l10n_br_city_id.ibge_code
+                )
+
             n.infNFe.ide.indPag.valor = 2
-            n.infNFe.ide.serie.valor = 101
-            n.infNFe.ide.nNF.valor = 37
-            n.infNFe.ide.dEmi.valor = datetime.datetime(2011, 5, 25)
-            n.infNFe.ide.dSaiEnt.valor = datetime.datetime(2011, 5, 25)
-            n.infNFe.ide.cMunFG.valor = 3513801
+            n.infNFe.ide.mod.valor = inv.fiscal_document_id.code
+            n.infNFe.ide.serie.valor = inv.document_serie_id.code
+            n.infNFe.ide.nNF.valor = inv.internal_number or ''
+            n.infNFe.ide.dEmi.valor = inv.date_invoice or today
+            n.infNFe.ide.dSaiEnt.valor = inv.date_invoice or ''
+            n.infNFe.ide.hSaiEnt.valor = ''
+            n.infNFe.ide.cMunFG.valor = ibge_code
             n.infNFe.ide.tpImp.valor = 1
             n.infNFe.ide.tpEmis.valor = 1
-            n.infNFe.ide.indPag.valor = 1
+            n.infNFe.ide.tpAmb.valor = nfe_environment
             n.infNFe.ide.finNFe.valor = 1
             n.infNFe.ide.procEmi.valor = 0
-            n.infNFe.ide.verProc.valor = u'TaugaRS Haveno 1.0'
+            n.infNFe.ide.verProc.valor = u'2.0.9'
+            n.infNFe.ide.dhCont.valor = ''
+            n.infNFe.ide.xJust = ''
+
+            if inv.cfop_ids and inv.cfop_ids[0].type in ("input"):
+                n.infNFe.ide.tpNF.valor = '0'
+            else:
+                n.infNFe.ide.tpNF.valor = '1'
 
             # Emitente
-            n.infNFe.emit.CNPJ.valor = u'11111111111111'
-            n.infNFe.emit.xNome.valor = u'Razao Social Emitente Ltda. EPP'
-            n.infNFe.emit.xFant.valor = u'Bromelia'
-            n.infNFe.emit.enderEmit.xLgr.valor = u'R. Ibiuna'
-            n.infNFe.emit.enderEmit.nro.valor = u'729'
-            n.infNFe.emit.enderEmit.xCpl.valor = u'sala 3'
-            n.infNFe.emit.enderEmit.xBairro.valor = u'Jd. Guanabara'
-            n.infNFe.emit.enderEmit.cMun.valor = u'3552205'
-            n.infNFe.emit.enderEmit.xMun.valor = u'Sorocaba'
-            n.infNFe.emit.enderEmit.UF.valor = u'SP'
-            n.infNFe.emit.enderEmit.CEP.valor = u'18085520'
-            n.infNFe.emit.enderEmit.fone.valor = u'1534110602'
-            n.infNFe.emit.IE.valor = u'111111111111'
-            
+            escaped_punctuation = re.escape(string.punctuation)
+            if inv.company_id.partner_id.tipo_pessoa == 'J':
+                n.infNFe.emit.CNPJ.valor = re.sub('[%s]' %
+                                                  escaped_punctuation,
+                                                  '',
+                                                  inv.partner_id.cnpj_cpf or ''
+                                                  )
+            else:
+                n.infNFe.emit.CPF.valor = re.sub('[%s]' %
+                                                 escaped_punctuation,
+                                                 '',
+                                                 inv.partner_id.cnpj_cpf or ''
+                                                 )
+
+            address_company_bc_code = ''
+            if comp_addr_d.country_id.bc_code:
+                address_company_bc_code = comp_addr_d.country_id.bc_code[1:]
+
+            n.infNFe.emit.xNome.valor = self._unaccent(
+                inv.company_id.partner_id.legal_name or ''
+                )
+            n.infNFe.emit.xFant.valor = self._unaccent(
+                inv.company_id.partner_id.name or ''
+                )
+            n.infNFe.emit.enderEmit.xLgr.valor = self._unaccent(
+                comp_addr_d.street or ''
+                )
+            n.infNFe.emit.enderEmit.nro.valor = comp_addr_d.number or ''
+            n.infNFe.emit.enderEmit.xCpl.valor = self._unaccent(
+                comp_addr_d.street2 or ''
+                )
+            n.infNFe.emit.enderEmit.xBairro.valor = self._unaccent(
+                comp_addr_d.district or 'Sem Bairro'
+                )
+            n.infNFe.emit.enderEmit.cMun.valor = '%s%s' % (
+                comp_addr_d.state_id.ibge_code,
+                comp_addr_d.l10n_br_city_id.ibge_code
+                )
+            n.infNFe.emit.enderEmit.xMun.valor = self._unaccent(
+                comp_addr_d.l10n_br_city_id.name or ''
+                )
+            n.infNFe.emit.enderEmit.UF.valor = comp_addr_d.state_id.code or ''
+            n.infNFe.emit.enderEmit.CEP.valor = re.sub(
+                '[%s]' % escaped_punctuation,
+                '',
+                str(comp_addr_d.zip or '').replace(' ', '')
+                )
+            n.infNFe.emit.enderEmit.cPais.valor = address_company_bc_code or ''
+            n.infNFe.emit.enderEmit.xPais.valor = self._unaccent(
+                comp_addr_d.country_id.name or ''
+                )
+            n.infNFe.emit.enderEmit.fone.valor = re.sub(
+                '[%s]' % re.escape(string.punctuation),
+                '',
+                str(comp_addr_d.phone or '').replace(' ', '')
+                )
+            n.infNFe.emit.IE.valor = re.sub(
+                '[%s]' % re.escape(string.punctuation),
+                '',
+                inv.company_id.partner_id.inscr_est or ''
+                )
+            n.infNFe.emit.IEST = ''
+            n.infNFe.emit.IM = re.sub(
+                '[%s]' % re.escape(string.punctuation),
+                '',
+                inv.company_id.partner_id.inscr_mun or ''
+                )
+            n.infNFe.emit.CNAE = re.sub(
+                '[%s]' % re.escape(string.punctuation),
+                '',
+                inv.company_id.cnae_main_id.code or ''
+                )
+
             # Regime tributário
-            n.infNFe.emit.CRT.valor = u'1'
+            n.infNFe.emit.CRT = inv.company_id.fiscal_type or ''
+
+            # FIXME: check if it works whithout this stuff
+            '''
+            TODO: - Verificar, pois quando e informado do CNAE ele exige que
+                a inscricao municipal, parece um bug do emissor da NFE
+            '''
+            #if not inv.company_id.partner_id.inscr_mun:
+            #    n.infNFe.emit.CNAE = ''
 
             # Destinatário
-            n.infNFe.dest.CNPJ.valor = u'11143192000101'
-            n.infNFe.dest.xNome.valor = u'Razao Social Destinatario Ltda. EPP'
-            n.infNFe.dest.enderDest.xLgr.valor = u'R. Ibiuna'
-            n.infNFe.dest.enderDest.nro.valor = u'729'
-            n.infNFe.dest.enderDest.xCpl.valor = u'sala 3'
-            n.infNFe.dest.enderDest.xBairro.valor = u'Jd. Morumbi'
-            n.infNFe.dest.enderDest.cMun.valor = u'3552205'
-            n.infNFe.dest.enderDest.xMun.valor = u'Sorocaba'
-            n.infNFe.dest.enderDest.UF.valor = u'SP'
-            n.infNFe.dest.enderDest.CEP.valor = u'18085520'
-            n.infNFe.dest.enderDest.fone.valor = u'1534110602'
-            n.infNFe.dest.IE.valor = u'795009239110'
+            if nfe_environment == 2:
+                n.infNFe.dest.xNome.valor = 'NF-E EMITIDA EM AMBIENTE DE ' + \
+                    'HOMOLOGACAO - SEM VALOR FISCAL'
+            else:
+                n.infNFe.dest.xNome.valor = self._unaccent(
+                    inv.partner_id.legal_name or ''
+                    )
 
-            n.infNFe.dest.email.valor = u'user@example.com'
+            if inv.partner_id.tipo_pessoa == 'J':
+                n.infNFe.dest.CNPJ.valor = re.sub(
+                    '[%s]' % re.escape(string.punctuation),
+                    '',
+                    inv.partner_id.cnpj_cpf or ''
+                    )
+            else:
+                n.infNFe.dest.CPF.valor = re.sub(
+                    '[%s]' % re.escape(string.punctuation),
+                    '',
+                    inv.partner_id.cnpj_cpf or ''
+                    )
 
-            # Detalhe
-            d1 = Det_200()
+            address_invoice_bc_code = ''
+            if inv.address_invoice_id.country_id.bc_code:
+                address_invoice_bc_code = \
+                    inv.address_invoice_id.country_id.bc_code[1:]
 
-            d1.nItem.valor = 1
-            d1.prod.cProd.valor = u'codigo do produto um'
-            d1.prod.cEAN.valor = u''
-            d1.prod.xProd.valor = u'Descricao do produto'
-            d1.prod.NCM.valor = u'94034000'
-            d1.prod.EXTIPI.valor = u''
-            d1.prod.CFOP.valor = u'5101'
-            d1.prod.uCom.valor = u'UND'
-            d1.prod.qCom.valor = u'100.00'
-            d1.prod.vUnCom.valor = u'10.0000'
-            d1.prod.vProd.valor = u'1000.00'
-            d1.prod.cEANTrib.valor = u''
-            d1.prod.uTrib.valor = d1.prod.uCom.valor
-            d1.prod.qTrib.valor = d1.prod.qCom.valor
-            d1.prod.vUnTrib.valor = d1.prod.vUnCom.valor
-            d1.prod.vFrete.valor = u'0.00'
-            d1.prod.vSeg.valor = u'0.00'
-            d1.prod.vDesc.valor = u'0.00'
-            d1.prod.vOutro.valor = u'0.00'
+            n.infNFe.dest.enderDest.xLgr.valor = self._unaccent(
+                inv.address_invoice_id.street or ''
+                )
+            n.infNFe.dest.enderDest.nro.valor = self._unaccent(
+                inv.address_invoice_id.number or ''
+                )
+            n.infNFe.dest.enderDest.xCpl.valor = re.sub(
+                '[%s]' % re.escape(string.punctuation),
+                '',
+                self._unaccent(inv.address_invoice_id.street2 or '')
+                )
+            n.infNFe.dest.enderDest.xBairro.valor = self._unaccent(
+                inv.address_invoice_id.district or 'Sem Bairro'
+                )
+            n.infNFe.dest.enderDest.cMun.valor = ('%s%s') % (
+                inv.address_invoice_id.state_id.ibge_code,
+                inv.address_invoice_id.l10n_br_city_id.ibge_code
+                )
+            n.infNFe.dest.enderDest.xMun.valor = self._unaccent(
+                inv.address_invoice_id.l10n_br_city_id.name or ''
+                )
+            n.infNFe.dest.enderDest.UF.valor = \
+                inv.address_invoice_id.state_id.code
+            n.infNFe.dest.enderDest.CEP.valor = re.sub(
+                '[%s]' % re.escape(string.punctuation),
+                '',
+                str(inv.address_invoice_id.zip or '').replace(' ', '')
+                )
+            n.infNFe.dest.enderDest.cPais.valor = address_invoice_bc_code
+            n.infNFe.dest.enderDest.xPais.valor = self._unaccent(
+                inv.address_invoice_id.country_id.name or ''
+                )
+            n.infNFe.dest.enderDest.fone.valor = re.sub(
+                '[%s]' % re.escape(string.punctuation),
+                '',
+                str(inv.address_invoice_id.phone or '').replace(' ', '')
+                )
+            n.infNFe.dest.IE.valor = re.sub(
+                '[%s]' % re.escape(string.punctuation),
+                '',
+                inv.partner_id.inscr_est or ''
+                )
+            n.infNFe.dest.email.valor = inv.partner_id.email or ''
 
-            # Produto entra no total da NF-e
-            d1.prod.indTot.valor = 1
+            if inv.partner_shipping_id and \
+                inv.address_invoice_id != inv.partner_shipping_id:
 
-            # Impostos
-            d1.imposto.regime_tributario = 1
-            d1.imposto.ICMS.CSOSN.valor = u'400'
-            d1.imposto.IPI.CST.valor = u'99'
-            d1.imposto.PIS.CST.valor = u'06'
-            d1.imposto.COFINS.CST.valor = u'06'
+                n.infNFe.entrega.xLgr = self._unaccent(
+                    inv.partner_shipping_id.street or ''
+                    )
+                n.infNFe.entrega.nro = self._unaccent(
+                    inv.partner_shipping_id.number or ''
+                    )
+                n.infNFe.entrega.xCpl = re.sub(
+                    '[%s]' % re.escape(string.punctuation),
+                    '',
+                    self._unaccent(inv.partner_shipping_id.street2 or '')
+                    )
+                n.infNFe.entrega.xBairro = re.sub(
+                    '[%s]' % re.escape(string.punctuation),
+                    '',
+                    self._unaccent(inv.partner_shipping_id.district or \
+                                   'Sem Bairro')
+                    )
+                n.infNFe.entrega.cMun = ('%s%s') % (
+                    inv.partner_shipping_id.state_id.ibge_code,
+                    inv.partner_shipping_id.l10n_br_city_id.ibge_code
+                    )
+                n.infNFe.entrega.xMun = self._unaccent(
+                    inv.partner_shipping_id.l10n_br_city_id.name or ''
+                    )
+                n.infNFe.entrega.UF = inv.address_invoice_id.state_id.code
 
-            # Detalhe
-            d2 = Det_200()
+                if inv.partner_id.tipo_pessoa == 'J':
+                    n.infNFe.entrega.CNPJ.valor = re.sub(
+                        '[%s]' % re.escape(string.punctuation),
+                        '',
+                        inv.partner_id.cnpj_cpf or ''
+                        )
+                else:
+                    n.infNFe.entrega.CPF.valor = re.sub(
+                        '[%s]' % re.escape(string.punctuation),
+                        '',
+                        inv.partner_id.cnpj_cpf or ''
+                        )
 
-            d2.nItem.valor = 2
-            d2.prod.cProd.valor = u'codigo do produto dois'
-            d2.prod.cEAN.valor = u''
-            d2.prod.xProd.valor = u'Descricao do produto'
-            d2.prod.NCM.valor = u'94034000'
-            d2.prod.EXTIPI.valor = u''
-            d2.prod.CFOP.valor = u'5101'
-            d2.prod.uCom.valor = u'UND'
-            d2.prod.qCom.valor = u'100.00'
-            d2.prod.vUnCom.valor = u'10.0000'
-            d2.prod.vProd.valor = u'1000.00'
-            d2.prod.cEANTrib.valor = u''
-            d2.prod.uTrib.valor = d1.prod.uCom.valor
-            d2.prod.qTrib.valor = d1.prod.qCom.valor
-            d2.prod.vUnTrib.valor = d1.prod.vUnCom.valor
-            d2.prod.vFrete.valor = u'0.00'
-            d2.prod.vSeg.valor = u'0.00'
-            d2.prod.vDesc.valor = u'0.00'
-            d2.prod.vOutro.valor = u'0.00'
+            i = 0
+            for inv_line in inv.invoice_line:
+                i += 1
 
-            # Produto entra no total da NF-e
-            d2.prod.indTot.valor = 1
+                # Detalhe
+                d = Det_200()
 
-            # Impostos
-            d2.imposto.regime_tributario = 1
-            d2.imposto.ICMS.CSOSN.valor = u'400'
-            d2.imposto.IPI.CST.valor = u'99'
-            d2.imposto.PIS.CST.valor = u'06'
-            d2.imposto.COFINS.CST.valor = u'06'
+                d.nItem.valor = 1
 
-            # Inclui o detalhe na NF-e
-            n.infNFe.det.append(d1)
+                product_obj = inv_line.product_id
+
+                if inv_line.product_id.code:
+                    d.prod.cProd.valor = inv_line.product_id.code
+                else:
+                    d.prod.cProd.valor = unicode(i).strip().rjust(4, u'0')
+
+                d.prod.cEAN.valor = inv_line.product_id.ean13 or ''
+                d.prod.xProd.valor = self._unaccent(
+                    inv_line.product_id.name or ''
+                    )
+
+                if product_obj.property_fiscal_classification:
+                    c_name = product_obj.property_fiscal_classification.name \
+                        or ''
+                else:
+                    c_name = ''
+
+                d.prod.NCM.valor = re.sub(
+                    '[%s]' % re.escape(string.punctuation), '', c_name
+                    )
+                d.prod.EXTIPI.valor = u''
+                d.prod.CFOP.valor = inv_line.cfop_id.code
+                d.prod.uCom.valor = self._unaccent(inv_line.uos_id.name or '')
+                d.prod.qCom.valor = str("%.4f" % inv_line.quantity)
+                d.prod.vUnCom.valor = str("%.2f" % (
+                    inv_line.price_unit * \
+                    (1 - (inv_line.discount or 0.0) / 100.0))
+                    )
+                d.prod.vProd.valor = str("%.2f" % inv_line.price_total)
+                d.prod.cEANTrib.valor = inv_line.product_id.ean13 or ''
+                d.prod.uTrib.valor = inv_line.uos_id.name
+                d.prod.qTrib.valor = str("%.4f" % inv_line.quantity)
+                d.prod.vUnTrib.valor = str("%.2f" % inv_line.price_unit)
+                d.prod.vFrete.valor = u'0.00'
+                d.prod.vSeg.valor = u'0.00'
+                d.prod.vDesc.valor = u'0.00'
+                d.prod.vOutro.valor = u'0.00'
+                d.prod.indTot.valor = 1
+                d.prod.xPed.valor = ''
+                d.prod.nItemPed.valor = ''
+
+                # Produto entra no total da NF-e
+                d.prod.indTot.valor = 1
+
+                if inv_line.icms_cst in ('00'):
+                    d.imposto.ICMS.orig.valor = product_obj.origin or '0'
+                    d.imposto.ICMS.CST.valor = inv_line.icms_cst
+                    d.imposto.ICMS.modBC.valor = 0
+                    d.imposto.ICMS.vBC.valor = str(
+                        "%.2f" % inv_line.icms_base
+                        )
+                    d.imposto.ICMS.pICMS.valor = str(
+                        "%.2f" % inv_line.icms_percent
+                        )
+                    d.imposto.ICMS.vICMS.valor = str(
+                        "%.2f" % inv_line.icms_value
+                        )
+
+                if inv_line.icms_cst in ('20'):
+                    d.imposto.ICMS.orig.valor = product_obj.origin or '0'
+                    d.imposto.ICMS.CST.valor = inv_line.icms_cst
+                    d.imposto.ICMS.modBC.valor = 0
+                    d.imposto.ICMS.pRedBCST.valor = str(
+                        "%.2f" % inv_line.icms_percent_reduction
+                        )
+                    d.imposto.ICMS.vBC.valor = str("%.2f" % inv_line.icms_base)
+                    d.imposto.ICMS.pICMS.valor = str(
+                        "%.2f" % inv_line.icms_percent
+                        )
+                    d.imposto.ICMS.vICMS.valor = str(
+                        "%.2f" % inv_line.icms_value
+                        )
+
+                if inv_line.icms_cst in ('10'):
+                    d.imposto.ICMS.orig.valor = product_obj.origin or '0'
+                    d.imposto.ICMS.CST.valor = inv_line.icms_cst
+                    d.imposto.ICMS.modBC.valor = '0'
+                    d.imposto.ICMS.vBC.valor = str("%.2f" % inv_line.icms_base)
+                    d.imposto.ICMS.pICMS.valor = str(
+                        "%.2f" % inv_line.icms_percent
+                        )
+                    d.imposto.ICMS.vICMS.valor = str(
+                        "%.2f" % inv_line.icms_value
+                        )
+                    d.imposto.ICMS.modBCST.valor = '4' # TODO
+                    d.imposto.ICMS.pMVAST.valor = str(
+                        "%.2f" % inv_line.icms_st_mva
+                        ) or ''
+                    d.imposto.ICMS.pRedBCST.valor = ''
+                    d.imposto.ICMS.vBCST.valor = str(
+                        "%.2f" % inv_line.icms_st_base
+                        )
+                    d.imposto.ICMS.pICMSST.valor = str(
+                        "%.2f" % inv_line.icms_st_percent
+                        )
+                    d.imposto.ICMS.vICMSST.valor = str(
+                        "%.2f" % inv_line.icms_st_value
+                        )
+
+                if inv_line.icms_cst in ('40', '41', '50', '51'):
+                    d.imposto.ICMS.orig.valor = product_obj.origin or '0'
+                    d.imposto.ICMS.CST.valor = inv_line.icms_cst
+                    d.imposto.ICMS.vICMS.valor = str(
+                        "%.2f" % inv_line.icms_value
+                        )
+                    d.imposto.ICMS.motDesICMS.valor = '9' # TODO
+
+                if inv_line.icms_cst in ('60'):
+                    d.imposto.ICMS.orig.valor = product_obj.origin or '0'
+                    d.imposto.ICMS.CST.valor = inv_line.icms_cst
+                    d.imposto.ICMS.vBCST.valor = str("%.2f" % 0.00)
+                    d.imposto.ICMS.vICMSST.valor = str("%.2f" % 0.00)
+
+                if inv_line.icms_cst in ('70'):
+                    d.imposto.ICMS.orig.valor = product_obj.origin or '0'
+                    d.imposto.ICMS.CST.valor = inv_line.icms_cst
+                    d.imposto.ICMS.modBC.valor = '0'
+                    d.imposto.ICMS.pRedBC.valor = str(
+                        "%.2f" % inv_line.icms_percent_reduction
+                        )
+                    d.imposto.ICMS.vBC.valor = str(
+                        "%.2f" % inv_line.icms_base
+                        )
+                    d.imposto.ICMS.pICMS.valor = str(
+                        "%.2f" % inv_line.icms_percent
+                        )
+                    d.imposto.ICMS.vICMS.valor = str(
+                        "%.2f" % inv_line.icms_value
+                        )
+                    d.imposto.ICMS.modBCST.valor = '4' # TODO
+                    d.imposto.ICMS.pMVAST.valor = str(
+                        "%.2f" % inv_line.icms_st_mva
+                        ) or ''
+                    d.imposto.ICMS.pRedBCST.valor = ''
+                    d.imposto.ICMS.vBCST.valor = str(
+                        "%.2f" % inv_line.icms_st_base
+                        )
+                    d.imposto.ICMS.pICMSST.valor = str(
+                        "%.2f" % inv_line.icms_st_percent
+                        )
+                    d.imposto.ICMS.vICMSST.valor = str(
+                        "%.2f" % inv_line.icms_st_value
+                        )
+
+                if inv_line.icms_cst in ('90', '900'):
+                    d.imposto.ICMS.orig.valor = product_obj.origin or '0'
+                    d.imposto.ICMS.CSOSN.valor = inv_line.icms_cst
+                    d.imposto.ICMS.modBC.valor = '0'
+                    d.imposto.ICMS.vBC.valor = str("%.2f" % 0.00)
+                    d.imposto.ICMS.pRedBC.valor = ''
+                    d.imposto.ICMS.pICMS.valor = str("%.2f" % 0.00)
+                    d.imposto.ICMS.vICMS.valor = str("%.2f" % 0.00)
+                    d.imposto.ICMS.modBCST.valor = ''
+                    d.imposto.ICMS.pMVAST.valor = ''
+                    d.imposto.ICMS.pRedBCST.valor = ''
+                    d.imposto.ICMS.vBCST.valor = ''
+                    d.imposto.ICMS.pICMSST.valor = ''
+                    d.imposto.ICMS.vICMSST.valor = ''
+                    d.imposto.ICMS.pCredSN.valor = str("%.2f" % 0.00)
+                    d.imposto.ICMS.vCredICMSSN.valor = str("%.2f" % 0.00)
+
+                d.imposto.IPI.clEnq.valor = ''
+                d.imposto.IPI.CNPJProd.valor = ''
+                d.imposto.IPI.cSelo.valor = ''
+                d.imposto.IPI.qSelo.valor = ''
+                d.imposto.IPI.cEnq.valor = '999'
+
+                if inv_line.ipi_cst in ('50', '51', '52') and \
+                        inv_line.ipi_percent > 0:
+
+                    d.imposto.IPI.CST.valor = inv_line.ipi_cst
+                    d.imposto.IPI.vIPI.valor = str("%.2f" % inv_line.ipi_value)
+
+                    if inv_line.ipi_type == 'percent' or '':
+                        d.imposto.IPI.vBC.valor = str(
+                            "%.2f" % inv_line.ipi_base
+                            )
+                        d.imposto.IPI.pIPI.valor = str(
+                            "%.2f" % inv_line.ipi_percent
+                            )
+
+                    if inv_line.ipi_type == 'quantity':
+                        pesol = 0
+                        if inv_line.product_id:
+                            pesol = inv_line.product_id.weight_net
+                        d.imposto.IPI.qUnid.valor = str(
+                            "%.4f" % (inv_line.quantity * pesol)
+                            )
+                        d.imposto.IPI.vUnid.valor = str(
+                            "%.4f" % inv_line.ipi_percent
+                            )
+
+                if inv_line.ipi_cst in ('99'):
+                    d.imposto.IPI.CST.valor = inv_line.ipi_cst
+                    d.imposto.IPI.vIPI.valor = str("%.2f" % inv_line.ipi_value)
+                    d.imposto.IPI.vBC.valor = str("%.2f" % inv_line.ipi_base)
+                    d.imposto.IPI.pIPI.valor = str(
+                        "%.2f" % inv_line.ipi_percent
+                        )
+
+                if inv_line.pis_cst in ('01') and inv_line.pis_percent > 0:
+                    d.imposto.PIS.CST.valor = inv_line.pis_cst
+                    d.imposto.PIS.vBC.valor = str("%.2f" % inv_line.pis_base)
+                    d.imposto.PIS.vPIS.valor = str("%.2f" % inv_line.pis_value)
+                    d.imposto.PIS.pPIS.valor = str(
+                        "%.2f" % inv_line.pis_percent
+                        )
+
+                if inv_line.pis_cst in ('99'):
+                    d.imposto.PIS.CST.valor = inv_line.pis_cst
+                    d.imposto.PIS.vPIS.valor = str("%.2f" % inv_line.pis_value)
+                    d.imposto.PIS.vBC.valor = str("%.2f" % inv_line.pis_base)
+                    d.imposto.PIS.pPIS.valor = str(
+                        "%.2f" % inv_line.pis_percent
+                        )
+
+                if inv_line.cofins_cst in ('01') and \
+                        inv_line.cofins_percent > 0:
+                    d.imposto.COFINS.CST.valor = inv_line.cofins_cst
+                    d.imposto.COFINS.vBC.valor = str(
+                        "%.2f" % inv_line.cofins_base
+                        )
+                    d.imposto.COFINS.pCOFINS.valor = str(
+                        "%.2f" % inv_line.cofins_percent
+                        )
+                    d.imposto.COFINS.vCOFINS.valor = str(
+                        "%.2f" % inv_line.cofins_value
+                        )
+
+                if inv_line.cofins_cst in ('99'):
+                    d.imposto.COFINS.CST.valor = inv_line.cofins_cst
+                    d.imposto.COFINS.vCOFINS.valor = str(
+                        "%.2f" % inv_line.cofins_value
+                        )
+                    d.imposto.COFINS.vBC.valor = str(
+                        "%.2f" % inv_line.cofins_base
+                        )
+                    d.imposto.COFINS.pCOFINS.valor = str(
+                        "%.2f" % inv_line.cofins_percent
+                        )
+
+                # Inclui o detalhe na NF-e
+                n.infNFe.det.append(d)
 
             # Totais
-            n.infNFe.total.ICMSTot.vBC.valor = u'0.00'
-            n.infNFe.total.ICMSTot.vICMS.valor = u'0.00'
-            n.infNFe.total.ICMSTot.vBCST.valor = u'0.00'
-            n.infNFe.total.ICMSTot.vST.valor = u'0.00'
-            n.infNFe.total.ICMSTot.vProd.valor = u'1000.00'
-            n.infNFe.total.ICMSTot.vFrete.valor = u'0.00'
-            n.infNFe.total.ICMSTot.vSeg.valor = u'0.00'
-            n.infNFe.total.ICMSTot.vDesc.valor = u'0.00'
-            n.infNFe.total.ICMSTot.vII.valor = u'0.00'
-            n.infNFe.total.ICMSTot.vIPI.valor = u'0.00'
-            n.infNFe.total.ICMSTot.vPIS.valor = u'0.00'
-            n.infNFe.total.ICMSTot.vCOFINS.valor = u'0.00'
-            n.infNFe.total.ICMSTot.vOutro.valor = u'0.00'
-            n.infNFe.total.ICMSTot.vNF.valor = u'0.00'
+            n.infNFe.total.ICMSTot.vBC.valor = str("%.2f" % inv.icms_base)
+            n.infNFe.total.ICMSTot.vICMS.valor = str("%.2f" % inv.icms_value)
+            n.infNFe.total.ICMSTot.vBCST.valor = str("%.2f" % inv.icms_st_base)
+            n.infNFe.total.ICMSTot.vST.valor = str("%.2f" % inv.icms_st_value)
+            n.infNFe.total.ICMSTot.vProd.valor = str(
+                "%.2f" % inv.amount_untaxed
+                )
+            n.infNFe.total.ICMSTot.vFrete.valor = str(
+                "%.2f" % inv.amount_freight
+                )
+            n.infNFe.total.ICMSTot.vSeg.valor = str(
+                "%.2f" % inv.amount_insurance
+                )
+            n.infNFe.total.ICMSTot.vDesc.valor = '0.00'
+            n.infNFe.total.ICMSTot.vII.valor = '0.00'
+            n.infNFe.total.ICMSTot.vIPI.valor = str("%.2f" % inv.ipi_value)
+            n.infNFe.total.ICMSTot.vPIS.valor = str("%.2f" % inv.pis_value)
+            n.infNFe.total.ICMSTot.vCOFINS.valor = str(
+                "%.2f" % inv.cofins_value
+                )
+            n.infNFe.total.ICMSTot.vOutro.valor = str(
+                "%.2f" % inv.amount_costs
+                )
+            n.infNFe.total.ICMSTot.vNF.valor = str("%.2f" % inv.amount_total)
 
-            n.infNFe.infAdic.infCpl.valor = u'Documento emitido por ME ou'\
-                u' EPP optante pelo Simples Nacional. ' \
-                u'Nao gera direito a credito fiscal de IPI. '
-            
+            if inv.carrier_id:
+
+                # Endereço da transportadora
+                partner_address_obj = self.pool.get('res.partner.address')
+
+                carrier_addr = partner_obj.address_get(
+                    cr, uid, [inv.carrier_id.partner_id.id], ['default']
+                    )
+                carrier_addr_default = partner_address_obj.browse(
+                    cr, uid, [carrier_addr['default']]
+                    )[0]
+
+                if inv.carrier_id.partner_id.legal_name:
+                    n.infNFe.transp.xNome.valor = self._unaccent(
+                        inv.carrier_id.partner_id.legal_name or ''
+                        )
+                else:
+                    n.infNFe.transp.xNome.valor = self._unaccent(
+                        inv.carrier_id.partner_id.name or ''
+                        )
+
+                n.infNFe.transp.IE.valor = \
+                    inv.carrier_id.partner_id.inscr_est or ''
+                n.infNFe.transp.xEnder.valor = self._unaccent(
+                    carrier_addr_default.street or ''
+                    )
+                n.infNFe.transp.UF.valor = \
+                    carrier_addr_default.state_id.code or ''
+
+                if carrier_addr_default.l10n_br_city_id:
+                    n.infNFe.transp.xMun.valor = self._unaccent(
+                        carrier_addr_default.l10n_br_city_id.name or ''
+                        )
+
+                if inv.carrier_id.partner_id.tipo_pessoa == 'J':
+                    n.infNFe.transp.transporta.CNPJ = re.sub(
+                        '[%s]' % re.escape(string.punctuation),
+                        '',
+                        inv.carrier_id.partner_id.cnpj_cpf or ''
+                        )
+                else:
+                    n.infNFe.transp.transporta.CPF = re.sub(
+                        '[%s]' % re.escape(string.punctuation),
+                        '',
+                        inv.carrier_id.partner_id.cnpj_cpf or ''
+                        )
+
+            if inv.vehicle_id:
+                n.infNFe.transp.veicTransp.placa.valor = \
+                    inv.vehicle_id.plate or ''
+                n.infNFe.transp.veicTransp.UF.valor = \
+                    inv.vehicle_id.plate.state_id.code or ''
+                n.infNFe.transp.veicTransp.RNTC.valor = \
+                    inv.vehicle_id.rntc_code or ''
+
+            if not inv.number_of_packages:
+                vol = Vol_200()
+                vol.qVol.valor = inv.number_of_packages
+                vol.esp.valor = 'Volume' # TODO
+                #n.infNFe.transp.vol.marca.valor # TODO
+                #n.infNFe.transp.vol.nVol.valor # TODO
+                vol.pesoL.valor = str("%.3f" % inv.weight_net)
+                vol.pesoB.valor = str("%.3f" % inv.weight)
+                n.infNFe.transp.vol.append(vol)
+
+            if inv.journal_id.revenue_expense:
+                for line in inv.move_line_receivable_id:
+                    dup = Dup_200()
+                    dup.nDup.valor = line.name
+                    dup.dVenc.valor = line.date_maturity or inv.date_due or \
+                        inv.date_invoice
+                    dup.vDup.valor = str("%.2f" % line.debit)
+
+                    n.infNFe.cobr.dup.append(dup)
+
+            n.infNFe.infAdic.infAdFisco.valor = ''
+            n.infNFe.infAdic.infCpl.valor = self._unaccent(inv.comment or '')
+
             # O retorno de cada webservice é um dicionário
             # estruturado da seguinte maneira:
             # { TIPO_DO_WS_EXECUTADO: {
@@ -327,9 +809,12 @@ class manage_nfe(osv.osv_memory):
 
         inv_obj = self.pool.get('account.invoice')
         active_ids = context.get('active_ids', [])
+        data = self.read(cr, uid, ids, [], context=context)[0]
+        justification = data['justification'][:255]
 
         conditions = [('id', 'in', active_ids),
-                      ('nfe_status', '=', NFE_STATUS['send_ok'])]
+                      ('nfe_status', '=', NFE_STATUS['send_ok']),
+                      ('nfe_access_key', '<>', '')]
         invoices_to_cancel = inv_obj.search(cr, uid, conditions)
 
         for inv in inv_obj.browse(cr, uid, invoices_to_cancel,
@@ -357,6 +842,33 @@ class manage_nfe(osv.osv_memory):
             p.salvar_arquivos = True
             p.contingencia_SCAN = False
             p.caminho = u''
+            p.ambiente = 2
+
+            partner_obj = self.pool.get('res.partner')
+            company_id_list = [inv.company_id.partner_id.id]
+            company_addr = partner_obj.address_get(cr, uid, company_id_list,
+                                                   ['default'])
+            comp_addr_d = self.pool.get('res.partner.address').browse(
+                cr,
+                uid,
+                [company_addr['default']],
+                context={'lang': 'pt_BR'}
+                )[0]
+
+            today = datetime.datetime.now()
+
+            n = NFe_200()
+            n.infNFe.ide.cUF = comp_addr_d.state_id.ibge_code
+            n.infNFe.ide.dEmi.valor = inv.date_invoice or today
+            n.infNFe.emit.CNPJ.valor = re.sub(
+                '[%s]' % re.escape(string.punctuation),
+                '',
+                inv.company_id.partner_id.cnpj_cpf or ''
+                )
+            n.infNFe.ide.serie.valor = inv.document_serie_id.code
+            n.infNFe.ide.nNF.valor = inv.internal_number or ''
+            n.infNFe.ide.tpEmis.valor = 1
+            n.monta_chave()
 
             # O retorno de cada webservice é um dicionário
             # estruturado da seguinte maneira:
@@ -366,9 +878,10 @@ class manage_nfe(osv.osv_memory):
             #       }
             # }
             process = p.cancelar_nota(
-                chave_nfe=u'35100411111111111111551010000000271123456789',
-                numero_protocolo=u'135100018751878',
-                justificativa=u'Somente um teste de cancelamento'
+                chave_nfe=n.chave,
+                # FIXME: é necessário um número de protocolo?
+                #numero_protocolo=u'135100018751878',
+                justificativa=justification
                 )
 
             code, title, content = 403, 'Gone', ''
@@ -411,6 +924,8 @@ class manage_nfe(osv.osv_memory):
 
         inv_obj = self.pool.get('account.invoice')
         active_ids = context.get('active_ids', [])
+        data = self.read(cr, uid, ids, [], context=context)[0]
+        justification = data['justification'][:255]
 
         conditions = [('id', 'in', active_ids),
                       ('nfe_status', '=', NFE_STATUS['send_ok'])]
@@ -451,10 +966,16 @@ class manage_nfe(osv.osv_memory):
             #       }
             # }
             #
-            process = p.inutilizar_nota(cnpj=u'11111111111111',
-                serie=u'101',
-                numero_inicial=18,
-                justificativa=u'Testando a inutilização de NF-e')
+            process = p.inutilizar_nota(
+                cnpj=re.sub(
+                    '[%s]' % re.escape(string.punctuation),
+                    '',
+                    inv.company_id.partner_id.cnpj_cpf or ''
+                    ),
+                serie=inv.document_serie_id.code,
+                numero_inicial=inv.internal_number,
+                justificativa=justification
+                )
 
             code, title, content = 403, 'Gone', ''
 
@@ -493,6 +1014,7 @@ class manage_nfe(osv.osv_memory):
         inv_obj = self.pool.get('account.invoice')
         active_ids = context.get('active_ids', [])
         failed = False
+        today = datetime.datetime.now()
 
         for inv in inv_obj.browse(cr, uid, active_ids,
                                   context=context):
@@ -522,6 +1044,30 @@ class manage_nfe(osv.osv_memory):
             p.contingencia_SCAN = False
             p.caminho = u''
 
+            partner_obj = self.pool.get('res.partner')
+            company_id_list = [inv.company_id.partner_id.id]
+            company_addr = partner_obj.address_get(cr, uid, company_id_list,
+                                                   ['default'])
+            comp_addr_d = self.pool.get('res.partner.address').browse(
+                cr,
+                uid,
+                [company_addr['default']],
+                context={'lang': 'pt_BR'}
+                )[0]
+
+            n = NFe_200()
+            n.infNFe.ide.cUF = comp_addr_d.state_id.ibge_code
+            n.infNFe.ide.dEmi.valor = inv.date_invoice or today
+            n.infNFe.emit.CNPJ.valor = re.sub(
+                '[%s]' % re.escape(string.punctuation),
+                '',
+                inv.company_id.partner_id.cnpj_cpf or ''
+                )
+            n.infNFe.ide.serie.valor = inv.document_serie_id.code
+            n.infNFe.ide.nNF.valor = inv.internal_number or ''
+            n.infNFe.ide.tpEmis.valor = 1
+            n.monta_chave()
+
             # O retorno de cada webservice é um dicionário
             # estruturado da seguinte maneira:
             # { TIPO_DO_WS_EXECUTADO: {
@@ -529,7 +1075,7 @@ class manage_nfe(osv.osv_memory):
             #       u'resposta': InstanciaDaMensagemDeResposta,
             #       }
             # }
-            process = p.consultar_nota(chave_nfe=u'35100411111111111111551010000000271123456789')
+            process = p.consultar_nota(chave_nfe=n.chave)
 
             code, title, content = 403, 'Gone', ''
 
@@ -537,7 +1083,7 @@ class manage_nfe(osv.osv_memory):
             if code != 200:
                 failed = True
                 data = {
-                    'nfe_retorno': NFE_STATUS['check_nfe_failed'] + ' - ' + 
+                    'nfe_retorno': NFE_STATUS['check_nfe_failed'] + ' - ' +
                         str(process.resposta.reason),
                     }
 
