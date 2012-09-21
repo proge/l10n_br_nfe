@@ -492,7 +492,21 @@ class manage_nfe(osv.osv_memory):
                     d.imposto.ICMS.vICMS.valor = str(
                         "%.2f" % inv_line.icms_value
                         )
-                    d.imposto.ICMS.modBCST.valor = '4' # TODO
+
+                    '''
+                    TODO: Modalidade de determinação da BC do ICMS ST
+                    
+                    0 - Preço tabelado ou máximo sugerido;
+                    1 - Lista Negativa (valor);
+                    2 - Lista Positiva (valor);
+                    3 - Lista Neutra (valor);
+                    4 - Margem Valor Agregado (%);
+                    5 - Pauta (valor);
+ 
+                    Página 169
+                    '''
+                    d.imposto.ICMS.modBCST.valor = '4'
+
                     d.imposto.ICMS.pMVAST.valor = str(
                         "%.2f" % inv_line.icms_st_mva
                         ) or ''
@@ -513,7 +527,29 @@ class manage_nfe(osv.osv_memory):
                     d.imposto.ICMS.vICMS.valor = str(
                         "%.2f" % inv_line.icms_value
                         )
-                    d.imposto.ICMS.motDesICMS.valor = '9' # TODO
+
+                    '''
+                    TODO: Motivo da desoneração do ICMS
+
+                    Este campo será preenchido quando o campo vICMS estiver
+                    preenchido.
+
+                    Informar o motivo da desoneração:
+                    1 – Táxi;
+                    2 – Deficiente Físico;
+                    3 – Produtor Agropecuário;
+                    4 – Frotista/Locadora;
+                    5 – Diplomático/Consular;
+                    6 – Utilitários e Motocicletas da Amazônia Ocidental e
+                    Áreas de Livre Comércio (Resolução 714/88 e 790/94 - 
+                    CONTRAN e suas alterações);
+                    7 – SUFRAMA;
+                    8 – Venda a Órgãos Públicos
+                    9 – outros. (NT 2011/004)
+
+                    Página 171
+                    '''
+                    d.imposto.ICMS.motDesICMS.valor = '9'
 
                 if inv_line.icms_cst in ('60'):
                     d.imposto.ICMS.orig.valor = product_obj.origin or '0'
@@ -537,7 +573,21 @@ class manage_nfe(osv.osv_memory):
                     d.imposto.ICMS.vICMS.valor = str(
                         "%.2f" % inv_line.icms_value
                         )
-                    d.imposto.ICMS.modBCST.valor = '4' # TODO
+
+                    '''
+                    TODO: Modalidade de determinação da BC do ICMS ST
+
+                    0 - Preço tabelado ou máximo sugerido;
+                    1 - Lista Negativa (valor);
+                    2 - Lista Positiva (valor);
+                    3 - Lista Neutra (valor);
+                    4 - Margem Valor Agregado (%);
+                    5 - Pauta (valor);
+ 
+                    Página 173
+                    '''
+                    d.imposto.ICMS.modBCST.valor = '4'
+
                     d.imposto.ICMS.pMVAST.valor = str(
                         "%.2f" % inv_line.icms_st_mva
                         ) or ''
@@ -736,9 +786,13 @@ class manage_nfe(osv.osv_memory):
             if not inv.number_of_packages:
                 vol = Vol_200()
                 vol.qVol.valor = inv.number_of_packages
-                vol.esp.valor = 'Volume' # TODO
-                #n.infNFe.transp.vol.marca.valor # TODO
-                #n.infNFe.transp.vol.nVol.valor # TODO
+
+                # TODO: Espécie dos volumes transportados (manual pág. 198)
+                vol.esp.valor = 'Volume'
+                # TODO: Marca dos volumes transportados (manual pág. 198)
+                #n.infNFe.transp.vol.marca.valor
+                # TODO: Numeração dos volumes transportados (manual pág. 198)
+                #n.infNFe.transp.vol.nVol.valor
                 vol.pesoL.valor = str("%.3f" % inv.weight_net)
                 vol.pesoB.valor = str("%.3f" % inv.weight)
                 n.infNFe.transp.vol.append(vol)
