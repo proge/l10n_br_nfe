@@ -30,10 +30,7 @@
     "description": """
     Module to support SPED NF-e.
     """,
-    'depends': [
-        'l10n_br_account',
-        'l10n_br_sale',
-        ],
+    'depends': ['l10n_br_sale'],
     'init_xml': [],
     'update_xml': [
         'account_invoice_view.xml',
