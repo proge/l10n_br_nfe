@@ -67,7 +67,7 @@
           </group>
 
           <group col="5" states="justify_cancel,justify_destroy">
-            <label string="Informe uma justificativa para realizar essa ação."
+            <label string="Informe uma justificativa para realizar essa ação (entre 15 e 255 caracteres)."
               colspan="4" />
 
             <field name="justification" colspan="5" />
