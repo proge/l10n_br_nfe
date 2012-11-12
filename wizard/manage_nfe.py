@@ -912,7 +912,7 @@ class manage_nfe(osv.osv_memory):
             today = datetime.datetime.now()
 
             n = NFe_200()
-            n.infNFe.ide.cUF = comp_addr_d.state_id.ibge_code
+            n.infNFe.ide.cUF.valor = comp_addr_d.state_id.ibge_code
             n.infNFe.ide.dEmi.valor = inv.date_invoice or today
             n.infNFe.emit.CNPJ.valor = re.sub(
                 '[%s]' % re.escape(string.punctuation),
@@ -1110,7 +1110,7 @@ class manage_nfe(osv.osv_memory):
                 )[0]
 
             n = NFe_200()
-            n.infNFe.ide.cUF = comp_addr_d.state_id.ibge_code
+            n.infNFe.ide.cUF.valor = comp_addr_d.state_id.ibge_code
             n.infNFe.ide.dEmi.valor = inv.date_invoice or today
             n.infNFe.emit.CNPJ.valor = re.sub(
                 '[%s]' % re.escape(string.punctuation),
