@@ -73,6 +73,9 @@ class manage_nfe(osv.osv_memory):
                                            string='Invoice Status',
                                            ),
         'justification': fields.text('Justificativa'),
+        'protocol_number': fields.char(
+            u'Número do Protocolo de Autorização de Uso', size=15
+            ),
         }
     _defaults = {
         'state': 'init',
@@ -124,7 +127,8 @@ class manage_nfe(osv.osv_memory):
         active_ids = context.get('active_ids', [])
 
         conditions = [('id', 'in', active_ids),
-                      ('nfe_status', '<>', NFE_STATUS['send_ok'])]
+                      '|', ('nfe_status', '=', None),
+                      ('nfe_status', '!=', NFE_STATUS['send_ok'])]
         invoices_to_send = inv_obj.search(cr, uid, conditions)
 
         for inv in inv_obj.browse(cr, uid, invoices_to_send, context=context):
@@ -155,7 +159,7 @@ class manage_nfe(osv.osv_memory):
 
             p = ProcessadorNFe()
             p.versao = u'2.00'
-            p.estado = u'SP'
+            p.estado = comp_addr_d.state_id.code
             p.certificado.arquivo = cert_file
             p.certificado.senha = cert_password
             p.salvar_arquivos = True
@@ -710,9 +714,15 @@ class manage_nfe(osv.osv_memory):
             n.infNFe.total.ICMSTot.vProd.valor = str(
                 "%.2f" % inv.amount_untaxed
                 )
-            n.infNFe.total.ICMSTot.vFrete.valor = str(
-                "%.2f" % inv.amount_freight
-                )
+            try:
+                n.infNFe.total.ICMSTot.vFrete.valor = str(
+                    "%.2f" % inv.amount_freight
+                    )
+            except AttributeError:
+                n.infNFe.total.ICMSTot.vFrete.valor = str(
+                    "%.2f" % 0
+                    )
+
             n.infNFe.total.ICMSTot.vSeg.valor = str(
                 "%.2f" % inv.amount_insurance
                 )
@@ -818,24 +828,19 @@ class manage_nfe(osv.osv_memory):
             #       }
             # }
             for processo in p.processar_notas([n]):
-                #print processo.envio.xml
-                #print processo.resposta.xml
                 break
 
-            code, title, content = 404, 'Not found', ''
+            data = {
+                'nfe_retorno': unicode(processo.resposta.xMotivo.valor)
+                }
 
-            # FIXME: check result instead of code
-            if code == 200:
+            if processo.resposta.cStat.valor == '103':
                 sent_invoices.append(inv.id)
+                data['nfe_status'] = NFE_STATUS['send_ok']
 
-                data = {'nfe_status': NFE_STATUS['send_ok']}
             else:
                 unsent_invoices.append(inv.id)
-
-                data = {
-                    'nfe_status': NFE_STATUS['send_failed'],
-                    'nfe_retorno': processo.resposta.reason,
-                    }
+                data['nfe_status'] = NFE_STATUS['send_failed']
 
             self.pool.get('account.invoice').write(cr,
                                                    uid,
@@ -864,11 +869,52 @@ class manage_nfe(osv.osv_memory):
         inv_obj = self.pool.get('account.invoice')
         active_ids = context.get('active_ids', [])
         data = self.read(cr, uid, ids, [], context=context)[0]
-        justification = data['justification'][:255]
+        protocol_number = data['protocol_number']
+
+        protocol_is_valid = True
+
+        if not protocol_number:
+            protocol_is_valid = False
+
+        else:
+            if not protocol_number.isdigit():
+                protocol_number = re.sub('[^0-9]', '', protocol_number)
+    
+            if len(protocol_number) < 15:
+                protocol_is_valid = False
+
+        if not protocol_is_valid:
+            raise osv.except_osv(
+                u'Valor de Campo Inválido',
+                u'O número do protocolo de autorização de uso deve ser ' + \
+                u'composto de exatamente 15 números.',
+                )
+
+        justification_is_valid = True
+
+        if not data['justification']:
+            justification_is_valid = False
+
+        else:
+            justification = data['justification'][:255]
+
+            if not protocol_number.isdigit():
+                protocol_number = re.sub('[^0-9]', '', str(protocol_number))
+    
+            if len(protocol_number) < 15:
+                justification_is_valid = False
+
+        if not justification_is_valid:
+            raise osv.except_osv(
+                u'Valor de Campo Inválido',
+                u'Justificativa deve ser composta de no mínimo 15 caracteres.',
+                )
 
         conditions = [('id', 'in', active_ids),
-                      ('nfe_status', '=', NFE_STATUS['send_ok']),
-                      ('nfe_access_key', '<>', '')]
+                      # FIXME:
+                      #('nfe_status', '=', NFE_STATUS['send_ok']),
+                      ('nfe_access_key', '!=', None),
+                      ]
         invoices_to_cancel = inv_obj.search(cr, uid, conditions)
 
         for inv in inv_obj.browse(cr, uid, invoices_to_cancel,
@@ -888,16 +934,6 @@ class manage_nfe(osv.osv_memory):
 
             cert_password = company.nfe_cert_password
 
-            p = ProcessadorNFe()
-            p.versao = u'2.00'
-            p.estado = u'SP'
-            p.certificado.arquivo = cert_file
-            p.certificado.senha = cert_password
-            p.salvar_arquivos = True
-            p.contingencia_SCAN = False
-            p.caminho = u''
-            p.ambiente = 2
-
             partner_obj = self.pool.get('res.partner')
             company_id_list = [inv.company_id.partner_id.id]
             company_addr = partner_obj.address_get(cr, uid, company_id_list,
@@ -908,6 +944,16 @@ class manage_nfe(osv.osv_memory):
                 [company_addr['default']],
                 context={'lang': 'pt_BR'}
                 )[0]
+
+            p = ProcessadorNFe()
+            p.versao = u'2.00'
+            p.estado = comp_addr_d.state_id.code
+            p.certificado.arquivo = cert_file
+            p.certificado.senha = cert_password
+            p.salvar_arquivos = True
+            p.contingencia_SCAN = False
+            p.caminho = u''
+            p.ambiente = 2
 
             today = datetime.datetime.now()
 
@@ -933,25 +979,22 @@ class manage_nfe(osv.osv_memory):
             # }
             process = p.cancelar_nota(
                 chave_nfe=n.chave,
-                # FIXME: é necessário um número de protocolo?
-                #numero_protocolo=u'135100018751878',
+                numero_protocolo=unicode(protocol_number),
                 justificativa=justification
                 )
 
-            code, title, content = 403, 'Gone', ''
+            data = {
+                'nfe_retorno': unicode(process.resposta.infCanc.xMotivo.valor)
+                }
 
-            # FIXME: check result instead of code
-            if code == 200:
+            if process.resposta.infCanc.cStat.valor == '101':
                 canceled_invoices.append(inv.id)
-
-                data = {'nfe_status': NFE_STATUS['cancel_ok']}
+                data['nfe_status'] = NFE_STATUS['cancel_ok']
 
             else:
                 failed_invoices.append(inv.id)
+                data['nfe_status'] = NFE_STATUS['cancel_failed']
 
-                data = {'nfe_status': NFE_STATUS['cancel_failed']}
-
-            data['nfe_retorno'] = process.resposta.reason
             self.pool.get('account.invoice').write(cr,
                                                    uid,
                                                    inv.id,
@@ -991,6 +1034,12 @@ class manage_nfe(osv.osv_memory):
                                                           uid,
                                                           [inv.company_id.id]
                                                           )[0]
+            default_address = self.pool.get('res.partner').address_get(
+                cr, uid, [company.partner_id.id], ['default']
+                )
+            company_address = self.pool.get('res.partner.address').browse(
+                cr, uid, default_address['default'], context=context
+                )
 
             cert_file_content = base64.decodestring(company.nfe_cert_file)
 
@@ -1004,7 +1053,7 @@ class manage_nfe(osv.osv_memory):
 
             p = ProcessadorNFe()
             p.versao = u'2.00'
-            p.estado = u'SP'
+            p.estado = company_address.state_id.code
             p.certificado.arquivo = cert_file
             p.certificado.senha = cert_password
             p.salvar_arquivos = True
@@ -1031,20 +1080,18 @@ class manage_nfe(osv.osv_memory):
                 justificativa=justification
                 )
 
-            code, title, content = 403, 'Gone', ''
+            data = {
+                'nfe_retorno': unicode(process.resposta.infCanc.xMotivo.valor)
+                }
 
-            # FIXME: check result instead of code
-            if code == 200:
+            if process.resposta.infCanc.cStat.valor == '102':
                 destroyed_invoices.append(inv.id)
-
-                data = {'nfe_status': NFE_STATUS['destroy_ok']}
+                data['nfe_status'] = NFE_STATUS['destroy_ok']
 
             else:
                 failed_invoices.append(inv.id)
+                data['nfe_status'] = NFE_STATUS['destroy_failed']
 
-                data = {'nfe_status': NFE_STATUS['destroy_failed']}
-
-            data['nfe_retorno'] = process.resposta.reason
             self.pool.get('account.invoice').write(cr,
                                                    uid,
                                                    inv.id,
@@ -1078,6 +1125,16 @@ class manage_nfe(osv.osv_memory):
                                              uid,
                                              [inv.company_id.id]
                                              )[0]
+            partner_obj = self.pool.get('res.partner')
+            company_id_list = [inv.company_id.partner_id.id]
+            company_addr = partner_obj.address_get(cr, uid, company_id_list,
+                                                   ['default'])
+            comp_addr_d = self.pool.get('res.partner.address').browse(
+                cr,
+                uid,
+                [company_addr['default']],
+                context={'lang': 'pt_BR'}
+                )[0]
 
             cert_file_content = base64.decodestring(company.nfe_cert_file)
 
@@ -1091,23 +1148,12 @@ class manage_nfe(osv.osv_memory):
 
             p = ProcessadorNFe()
             p.versao = u'2.00'
-            p.estado = u'SP'
+            p.estado = comp_addr_d.state_id.code
             p.certificado.arquivo = cert_file
             p.certificado.senha = cert_password
             p.salvar_arquivos = True
             p.contingencia_SCAN = False
             p.caminho = u''
-
-            partner_obj = self.pool.get('res.partner')
-            company_id_list = [inv.company_id.partner_id.id]
-            company_addr = partner_obj.address_get(cr, uid, company_id_list,
-                                                   ['default'])
-            comp_addr_d = self.pool.get('res.partner.address').browse(
-                cr,
-                uid,
-                [company_addr['default']],
-                context={'lang': 'pt_BR'}
-                )[0]
 
             n = NFe_200()
             n.infNFe.ide.cUF.valor = comp_addr_d.state_id.ibge_code
@@ -1131,22 +1177,9 @@ class manage_nfe(osv.osv_memory):
             # }
             process = p.consultar_nota(chave_nfe=n.chave)
 
-            code, title, content = 403, 'Gone', ''
-
-            # FIXME: check result instead of code
-            if code != 200:
-                failed = True
-                data = {
-                    'nfe_retorno': NFE_STATUS['check_nfe_failed'] + ' - ' +
-                        str(process.resposta.reason),
-                    }
-
-            else:
-                # TODO: use server result for nfe_status
-                data = {
-                    #'nfe_status': process.resposta.xml,
-                    'nfe_retorno': process.resposta.reason,
-                    }
+            data = {
+                'nfe_retorno': unicode(process.resposta.xMotivo.valor),
+                }
 
             self.pool.get('account.invoice').write(cr,
                                                    uid,
@@ -1158,7 +1191,7 @@ class manage_nfe(osv.osv_memory):
         if failed:
             result = {'state': 'failed'}
         else:
-            result = {'state': 'done'}
+            result = {'state': 'init'}
 
         self.write(cr, uid, ids, result)
 
@@ -1183,6 +1216,12 @@ class manage_nfe(osv.osv_memory):
                                                  uid,
                                                  [inv.company_id.id]
                                                  )[0]
+                default_address = self.pool.get('res.partner').address_get(
+                    cr, uid, [company.partner_id.id], ['default']
+                    )
+                company_address = self.pool.get('res.partner.address').browse(
+                    cr, uid, default_address['default'], context=context
+                    )
 
                 cert_file_content = base64.decodestring(company.nfe_cert_file)
 
@@ -1196,7 +1235,7 @@ class manage_nfe(osv.osv_memory):
 
                 p = ProcessadorNFe()
                 p.versao = u'2.00'
-                p.estado = u'SP'
+                p.estado = company_address.state_id.code
                 p.certificado.arquivo = cert_file
                 p.certificado.senha = cert_password
                 p.salvar_arquivos = True
@@ -1212,15 +1251,12 @@ class manage_nfe(osv.osv_memory):
                 # }
                 process = p.consultar_servico()
 
-                code, title, content = 403, 'Gone', ''
-
-                # FIXME: check result instead of code
-                if code == 200:
+                if process.resposta.cStat.valor == '107':
                     company_services_up.append(inv.company_id.id)
                 else:
                     company_services_down.append(inv.company_id.id)
 
-                data = {'nfe_retorno': process.resposta.reason}
+                data = {'nfe_retorno': unicode(process.resposta.xMotivo.valor)}
                 self.pool.get('account.invoice').write(cr,
                                                        uid,
                                                        inv.id,
@@ -1230,10 +1266,8 @@ class manage_nfe(osv.osv_memory):
 
         if len(company_services_up) == 0 and len(company_services_down) == 0:
             result = {'state': 'nothing'}
-        elif len(company_services_down) > 0:
-            result = {'state': 'failed'}
         else:
-            result = {'state': 'done'}
+            result = {'state': 'init'}
 
         self.write(cr, uid, ids, result)
 

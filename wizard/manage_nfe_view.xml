@@ -70,6 +70,8 @@
             <label string="Informe uma justificativa para realizar essa ação (entre 15 e 255 caracteres)."
               colspan="4" />
 
+            <field name="protocol_number" colspan="5"
+              states="justify_cancel" />
             <field name="justification" colspan="5" />
 
             <group colspan="5" col="5">

@@ -5,7 +5,9 @@
     <record model="ir.ui.view" id="view_l10n_br_nfe_account_invoice_form">
       <field name="name">l10n_br_nfe.account_invoice.form</field>
       <field name="model">account.invoice</field>
-      <field name="inherit_id" ref="account.invoice_form" />
+      <field name="type">form</field>
+      <field name="inherit_id"
+        ref="l10n_br_account.view_l10n_br_account_invoice_form10" />
       <field name="arch" type="xml">
         <xpath
           expr="/form/notebook/page/notebook/page/group[@name='l10n_br_nf']/field[@name='nfe_status']"
