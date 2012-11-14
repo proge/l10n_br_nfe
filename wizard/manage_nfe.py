@@ -72,7 +72,7 @@ class manage_nfe(osv.osv_memory):
         'invoice_status': fields.many2many('account.invoice',
                                            string='Invoice Status',
                                            ),
-        'justification': fields.text('Justificativa'),
+        'justification': fields.text(u'Justificativa'),
         'protocol_number': fields.char(
             u'Número do Protocolo de Autorização de Uso', size=15
             ),
@@ -132,10 +132,9 @@ class manage_nfe(osv.osv_memory):
         invoices_to_send = inv_obj.search(cr, uid, conditions)
 
         for inv in inv_obj.browse(cr, uid, invoices_to_send, context=context):
-            company = self.pool.get('res.company').browse(cr,
-                                                          uid,
-                                                          [inv.company_id.id]
-                                                          )[0]
+            company = self.pool.get('res.company').browse(
+                cr, uid, [inv.company_id.id]
+                )[0]
 
             company_id_list = [inv.company_id.partner_id.id]
             company_addr = partner_obj.address_get(cr, uid, company_id_list,
@@ -197,7 +196,7 @@ class manage_nfe(osv.osv_memory):
             n.infNFe.ide.procEmi.valor = 0
             n.infNFe.ide.verProc.valor = u'2.0.9'
             n.infNFe.ide.dhCont.valor = ''
-            n.infNFe.ide.xJust = ''
+            n.infNFe.ide.xJust.valor = ''
 
             if inv.cfop_ids and inv.cfop_ids[0].type in ("input"):
                 n.infNFe.ide.tpNF.valor = '0'
@@ -266,28 +265,27 @@ class manage_nfe(osv.osv_memory):
                 '',
                 inv.company_id.partner_id.inscr_est or ''
                 )
-            n.infNFe.emit.IEST = ''
-            n.infNFe.emit.IM = re.sub(
+            n.infNFe.emit.IEST.valor = ''
+            n.infNFe.emit.IM.valor = re.sub(
                 '[%s]' % re.escape(string.punctuation),
                 '',
                 inv.company_id.partner_id.inscr_mun or ''
                 )
-            n.infNFe.emit.CNAE = re.sub(
+            n.infNFe.emit.CNAE.valor = re.sub(
                 '[%s]' % re.escape(string.punctuation),
                 '',
                 inv.company_id.cnae_main_id.code or ''
                 )
 
             # Regime tributário
-            n.infNFe.emit.CRT = inv.company_id.fiscal_type or ''
+            n.infNFe.emit.CRT.valor = inv.company_id.fiscal_type or ''
 
-            # FIXME: check if it works whithout this stuff
             '''
-            TODO: - Verificar, pois quando e informado do CNAE ele exige que
-                a inscricao municipal, parece um bug do emissor da NFE
+            FIXME: - Quando é informado o CNAE, ele exige a inscricao municipal.
+            Parece um bug do emissor da NFE.
             '''
-            #if not inv.company_id.partner_id.inscr_mun:
-            #    n.infNFe.emit.CNAE = ''
+            if not inv.company_id.partner_id.inscr_mun:
+                n.infNFe.emit.CNAE.valor = ''
 
             # Destinatário
             if nfe_environment == 2:
@@ -820,6 +818,8 @@ class manage_nfe(osv.osv_memory):
             n.infNFe.infAdic.infAdFisco.valor = ''
             n.infNFe.infAdic.infCpl.valor = self._unaccent(inv.comment or '')
 
+            n.gera_nova_chave()
+
             # O retorno de cada webservice é um dicionário
             # estruturado da seguinte maneira:
             # { TIPO_DO_WS_EXECUTADO: {
@@ -828,13 +828,13 @@ class manage_nfe(osv.osv_memory):
             #       }
             # }
             for processo in p.processar_notas([n]):
-                break
+                pass
 
             data = {
                 'nfe_retorno': unicode(processo.resposta.xMotivo.valor)
                 }
 
-            if processo.resposta.cStat.valor == '103':
+            if processo.resposta.cStat.valor in ['103', '104', '105']:
                 sent_invoices.append(inv.id)
                 data['nfe_status'] = NFE_STATUS['send_ok']
 
@@ -910,11 +910,7 @@ class manage_nfe(osv.osv_memory):
                 u'Justificativa deve ser composta de no mínimo 15 caracteres.',
                 )
 
-        conditions = [('id', 'in', active_ids),
-                      # FIXME:
-                      #('nfe_status', '=', NFE_STATUS['send_ok']),
-                      ('nfe_access_key', '!=', None),
-                      ]
+        conditions = [('id', 'in', active_ids)]
         invoices_to_cancel = inv_obj.search(cr, uid, conditions)
 
         for inv in inv_obj.browse(cr, uid, invoices_to_cancel,
@@ -923,6 +919,13 @@ class manage_nfe(osv.osv_memory):
                                                           uid,
                                                           [inv.company_id.id]
                                                           )[0]
+
+            if not company.nfe_cert_file:
+                raise osv.osv_except(
+                    u'Faltam dados no cadastro da empresa',
+                    u'O certificado digital e sua senha devem ser ' + \
+                    u'informados nos dados da empresa.',
+                    )
 
             cert_file_content = base64.decodestring(company.nfe_cert_file)
 
@@ -1030,10 +1033,9 @@ class manage_nfe(osv.osv_memory):
 
         for inv in inv_obj.browse(cr, uid, invoices_to_cancel,
                                   context=context):
-            company = self.pool.get('res.company').browse(cr,
-                                                          uid,
-                                                          [inv.company_id.id]
-                                                          )[0]
+            company = self.pool.get('res.company').browse(
+                cr, uid, [inv.company_id.id]
+                )[0]
             default_address = self.pool.get('res.partner').address_get(
                 cr, uid, [company.partner_id.id], ['default']
                 )
@@ -1120,20 +1122,15 @@ class manage_nfe(osv.osv_memory):
         for inv in inv_obj.browse(cr, uid, active_ids,
                                   context=context):
 
-            company = self.pool.get('res.company'
-                                    ).browse(cr,
-                                             uid,
-                                             [inv.company_id.id]
-                                             )[0]
+            company = self.pool.get('res.company').browse(
+                cr, uid, [inv.company_id.id]
+                )[0]
             partner_obj = self.pool.get('res.partner')
             company_id_list = [inv.company_id.partner_id.id]
             company_addr = partner_obj.address_get(cr, uid, company_id_list,
                                                    ['default'])
             comp_addr_d = self.pool.get('res.partner.address').browse(
-                cr,
-                uid,
-                [company_addr['default']],
-                context={'lang': 'pt_BR'}
+                cr, uid, [company_addr['default']], context={'lang': 'pt_BR'}
                 )[0]
 
             cert_file_content = base64.decodestring(company.nfe_cert_file)
@@ -1211,11 +1208,9 @@ class manage_nfe(osv.osv_memory):
             if inv.company_id.id not in company_services_up and \
                 inv.company_id.id not in company_services_down:
 
-                company = self.pool.get('res.company'
-                                        ).browse(cr,
-                                                 uid,
-                                                 [inv.company_id.id]
-                                                 )[0]
+                company = self.pool.get('res.company').browse(
+                    cr, uid, [inv.company_id.id]
+                    )[0]
                 default_address = self.pool.get('res.partner').address_get(
                     cr, uid, [company.partner_id.id], ['default']
                     )
