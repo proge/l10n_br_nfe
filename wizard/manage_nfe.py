@@ -146,6 +146,13 @@ class manage_nfe(osv.osv_memory):
                 context={'lang': 'pt_BR'}
                 )[0]
 
+            if not company.nfe_cert_file:
+                raise osv.osv_except(
+                    u'Faltam dados no cadastro da empresa',
+                    u'O certificado digital e sua senha devem ser ' + \
+                    u'informados nos dados da empresa.',
+                    )
+
             cert_file_content = base64.decodestring(company.nfe_cert_file)
 
             caminho_temporario = u'/tmp/'
@@ -164,6 +171,7 @@ class manage_nfe(osv.osv_memory):
             p.salvar_arquivos = True
             p.contingencia_SCAN = False
             p.caminho = u''
+            #p.danfe.caminho = u'/tmp/danfe/'
 
             # Instancia uma NF-e
             n = NFe_200()
@@ -206,17 +214,17 @@ class manage_nfe(osv.osv_memory):
             # Emitente
             escaped_punctuation = re.escape(string.punctuation)
             if inv.company_id.partner_id.tipo_pessoa == 'J':
-                n.infNFe.emit.CNPJ.valor = re.sub('[%s]' %
-                                                  escaped_punctuation,
-                                                  '',
-                                                  inv.partner_id.cnpj_cpf or ''
-                                                  )
+                n.infNFe.emit.CNPJ.valor = re.sub(
+                    '[%s]' % escaped_punctuation,
+                    '',
+                    inv.company_id.partner_id.cnpj_cpf or ''
+                    )
             else:
-                n.infNFe.emit.CPF.valor = re.sub('[%s]' %
-                                                 escaped_punctuation,
-                                                 '',
-                                                 inv.partner_id.cnpj_cpf or ''
-                                                 )
+                n.infNFe.emit.CPF.valor = re.sub(
+                    '[%s]' % escaped_punctuation,
+                    '',
+                    inv.company_id.partner_id.cnpj_cpf or ''
+                    )
 
             address_company_bc_code = ''
             if comp_addr_d.country_id.bc_code:
@@ -716,23 +724,23 @@ class manage_nfe(osv.osv_memory):
                 n.infNFe.total.ICMSTot.vFrete.valor = str(
                     "%.2f" % inv.amount_freight
                     )
-            except AttributeError:
-                n.infNFe.total.ICMSTot.vFrete.valor = str(
-                    "%.2f" % 0
+                n.infNFe.total.ICMSTot.vSeg.valor = str(
+                    "%.2f" % inv.amount_insurance
                     )
+                n.infNFe.total.ICMSTot.vOutro.valor = str(
+                    "%.2f" % inv.amount_costs
+                    )
+            except AttributeError:
+                n.infNFe.total.ICMSTot.vFrete.valor = str("%.2f" % 0)
+                n.infNFe.total.ICMSTot.vSeg.valor = str("%.2f" % 0)
+                n.infNFe.total.ICMSTot.vOutro.valor = str("%.2f" % 0)
 
-            n.infNFe.total.ICMSTot.vSeg.valor = str(
-                "%.2f" % inv.amount_insurance
-                )
             n.infNFe.total.ICMSTot.vDesc.valor = '0.00'
             n.infNFe.total.ICMSTot.vII.valor = '0.00'
             n.infNFe.total.ICMSTot.vIPI.valor = str("%.2f" % inv.ipi_value)
             n.infNFe.total.ICMSTot.vPIS.valor = str("%.2f" % inv.pis_value)
             n.infNFe.total.ICMSTot.vCOFINS.valor = str(
                 "%.2f" % inv.cofins_value
-                )
-            n.infNFe.total.ICMSTot.vOutro.valor = str(
-                "%.2f" % inv.amount_costs
                 )
             n.infNFe.total.ICMSTot.vNF.valor = str("%.2f" % inv.amount_total)
 
@@ -796,7 +804,7 @@ class manage_nfe(osv.osv_memory):
                 vol.qVol.valor = inv.number_of_packages
 
                 # TODO: Espécie dos volumes transportados (manual pág. 198)
-                vol.esp.valor = 'Volume'
+                #vol.esp.valor = 'Volume'
                 # TODO: Marca dos volumes transportados (manual pág. 198)
                 #n.infNFe.transp.vol.marca.valor
                 # TODO: Numeração dos volumes transportados (manual pág. 198)
@@ -971,7 +979,7 @@ class manage_nfe(osv.osv_memory):
             n.infNFe.ide.serie.valor = inv.document_serie_id.code
             n.infNFe.ide.nNF.valor = inv.internal_number or ''
             n.infNFe.ide.tpEmis.valor = 1
-            n.monta_chave()
+            n.gera_nova_chave()
 
             # O retorno de cada webservice é um dicionário
             # estruturado da seguinte maneira:
@@ -1027,8 +1035,7 @@ class manage_nfe(osv.osv_memory):
         data = self.read(cr, uid, ids, [], context=context)[0]
         justification = data['justification'][:255]
 
-        conditions = [('id', 'in', active_ids),
-                      ('nfe_status', '=', NFE_STATUS['send_ok'])]
+        conditions = [('id', 'in', active_ids)]
         invoices_to_cancel = inv_obj.search(cr, uid, conditions)
 
         for inv in inv_obj.browse(cr, uid, invoices_to_cancel,
@@ -1042,6 +1049,13 @@ class manage_nfe(osv.osv_memory):
             company_address = self.pool.get('res.partner.address').browse(
                 cr, uid, default_address['default'], context=context
                 )
+
+            if not company.nfe_cert_file:
+                raise osv.osv_except(
+                    u'Faltam dados no cadastro da empresa',
+                    u'O certificado digital e sua senha devem ser ' + \
+                    u'informados nos dados da empresa.',
+                    )
 
             cert_file_content = base64.decodestring(company.nfe_cert_file)
 
@@ -1083,10 +1097,10 @@ class manage_nfe(osv.osv_memory):
                 )
 
             data = {
-                'nfe_retorno': unicode(process.resposta.infCanc.xMotivo.valor)
+                'nfe_retorno': unicode(process.resposta.infInut.xMotivo.valor)
                 }
 
-            if process.resposta.infCanc.cStat.valor == '102':
+            if process.resposta.infInut.cStat.valor == '102':
                 destroyed_invoices.append(inv.id)
                 data['nfe_status'] = NFE_STATUS['destroy_ok']
 
@@ -1133,6 +1147,13 @@ class manage_nfe(osv.osv_memory):
                 cr, uid, [company_addr['default']], context={'lang': 'pt_BR'}
                 )[0]
 
+            if not company.nfe_cert_file:
+                raise osv.osv_except(
+                    u'Faltam dados no cadastro da empresa',
+                    u'O certificado digital e sua senha devem ser ' + \
+                    u'informados nos dados da empresa.',
+                    )
+
             cert_file_content = base64.decodestring(company.nfe_cert_file)
 
             caminho_temporario = u'/tmp/'
@@ -1163,7 +1184,7 @@ class manage_nfe(osv.osv_memory):
             n.infNFe.ide.serie.valor = inv.document_serie_id.code
             n.infNFe.ide.nNF.valor = inv.internal_number or ''
             n.infNFe.ide.tpEmis.valor = 1
-            n.monta_chave()
+            n.gera_nova_chave()
 
             # O retorno de cada webservice é um dicionário
             # estruturado da seguinte maneira:
@@ -1217,6 +1238,13 @@ class manage_nfe(osv.osv_memory):
                 company_address = self.pool.get('res.partner.address').browse(
                     cr, uid, default_address['default'], context=context
                     )
+
+                if not company.nfe_cert_file:
+                    raise osv.osv_except(
+                        u'Faltam dados no cadastro da empresa',
+                        u'O certificado digital e sua senha devem ser ' + \
+                        u'informados nos dados da empresa.',
+                        )
 
                 cert_file_content = base64.decodestring(company.nfe_cert_file)
 
