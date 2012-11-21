@@ -152,7 +152,7 @@ class manage_nfe(osv.osv_memory):
                 )[0]
 
             if not company.nfe_cert_file:
-                raise osv.osv_except(
+                raise osv.except_osv(
                     u'Faltam dados no cadastro da empresa',
                     u'O certificado digital e sua senha devem ser ' + \
                     u'informados nos dados da empresa.',
@@ -935,7 +935,7 @@ class manage_nfe(osv.osv_memory):
                                                           )[0]
 
             if not company.nfe_cert_file:
-                raise osv.osv_except(
+                raise osv.except_osv(
                     u'Faltam dados no cadastro da empresa',
                     u'O certificado digital e sua senha devem ser ' + \
                     u'informados nos dados da empresa.',
@@ -1050,7 +1050,7 @@ class manage_nfe(osv.osv_memory):
                 )
 
             if not company.nfe_cert_file:
-                raise osv.osv_except(
+                raise osv.except_osv(
                     u'Faltam dados no cadastro da empresa',
                     u'O certificado digital e sua senha devem ser ' + \
                     u'informados nos dados da empresa.',
@@ -1138,7 +1138,7 @@ class manage_nfe(osv.osv_memory):
                 )[0]
 
             if not company.nfe_cert_file:
-                raise osv.osv_except(
+                raise osv.except_osv(
                     u'Faltam dados no cadastro da empresa',
                     u'O certificado digital e sua senha devem ser ' + \
                     u'informados nos dados da empresa.',
@@ -1223,7 +1223,7 @@ class manage_nfe(osv.osv_memory):
                     )
 
                 if not company.nfe_cert_file:
-                    raise osv.osv_except(
+                    raise osv.except_osv(
                         u'Faltam dados no cadastro da empresa',
                         u'O certificado digital e sua senha devem ser ' + \
                         u'informados nos dados da empresa.',
