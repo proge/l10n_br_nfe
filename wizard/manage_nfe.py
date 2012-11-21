@@ -840,7 +840,7 @@ class manage_nfe(osv.osv_memory):
                 'nfe_retorno': unicode(processo.resposta.xMotivo.valor)
                 }
 
-            if processo.resposta.cStat.valor in ['103', '104', '105']:
+            if processo.resposta.cStat.valor == '104':
                 sent_invoices.append(inv.id)
                 data['nfe_status'] = NFE_STATUS['send_ok']
 
@@ -849,6 +849,13 @@ class manage_nfe(osv.osv_memory):
 
                 data['nfe_danfe'] = encoded_data
                 data['nfe_danfe_name'] = n.chave + '.pdf'
+                data['nfe_sent_xml'] = n.get_xml().encode("base64")
+                data['nfe_sent_xml_name'] = n.chave + '.xml'
+
+            elif processo.resposta.cStat.valor in ['103', '105']:
+                sent_invoices.append(inv.id)
+                data['nfe_status'] = NFE_STATUS['send_ok']
+
                 data['nfe_sent_xml'] = n.get_xml().encode("base64")
                 data['nfe_sent_xml_name'] = n.chave + '.xml'
 
