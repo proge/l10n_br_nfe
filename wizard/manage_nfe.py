@@ -1279,5 +1279,95 @@ class manage_nfe(osv.osv_memory):
 
         return True
 
+    def generate_danfe(self, cr, uid, ids, context=None):
+        """Generate DANFE"""
+        inv_obj = self.pool.get('account.invoice')
+        active_ids = context.get('active_ids', [])
+        failed = False
+        result = {}
+
+        for inv in inv_obj.browse(cr, uid, active_ids,
+                                  context=context):
+
+            company = self.pool.get('res.company').browse(
+                cr, uid, [inv.company_id.id]
+                )[0]
+            partner_obj = self.pool.get('res.partner')
+            company_id_list = [inv.company_id.partner_id.id]
+            company_addr = partner_obj.address_get(cr, uid, company_id_list,
+                                                   ['default'])
+            comp_addr_d = self.pool.get('res.partner.address').browse(
+                cr, uid, [company_addr['default']], context={'lang': 'pt_BR'}
+                )[0]
+
+            if not company.nfe_cert_file:
+                raise osv.except_osv(
+                    u'Faltam dados no cadastro da empresa',
+                    u'O certificado digital e sua senha devem ser ' + \
+                    u'informados nos dados da empresa.',
+                    )
+
+            cert_file_content = base64.decodestring(company.nfe_cert_file)
+
+            caminho_temporario = u'/tmp/'
+            cert_file = caminho_temporario + uuid4().hex
+            arq_tmp = open(cert_file, 'w')
+            arq_tmp.write(cert_file_content)
+            arq_tmp.close()
+
+            cert_password = company.nfe_cert_password
+
+            p = ProcessadorNFe()
+            p.versao = u'2.00'
+            p.estado = comp_addr_d.state_id.code
+            p.certificado.arquivo = cert_file
+            p.certificado.senha = cert_password
+            p.salvar_arquivos = True
+            p.contingencia_SCAN = False
+            p.caminho = u'/tmp/'
+            p.gerar_danfe = True
+            p.danfe.caminho = u'/tmp/'
+
+            if not inv.nfe_sent_xml:
+                raise osv.except_osv(
+                    u'Não foi possível gerar o DANFE',
+                    u'A nota precisa ter sido emitida para a geração do ' + \
+                    u'DANFE.',
+                    )
+
+            n = NFe_200()
+            n.set_xml(inv.nfe_sent_xml.decode('base64'))
+            n.gera_nova_chave()
+            process = p.consultar_nota(chave_nfe=n.chave)
+
+            process = p.montar_processo_uma_nota(
+                n, protnfe_recibo=process.resposta.protNFe
+                )
+
+            file_content = process.danfe_pdf
+            encoded_data = file_content.encode("base64")
+
+            data = {
+                'nfe_danfe': encoded_data,
+                'nfe_danfe_name': n.chave + '.pdf',
+                'nfe_retorno': unicode(process.protNFe.infProt.xMotivo.valor),
+                }
+
+            self.pool.get('account.invoice').write(cr,
+                                                   uid,
+                                                   inv.id,
+                                                   data,
+                                                   context=context
+                                                   )
+
+        if failed:
+            result['state'] = 'failed'
+        else:
+            result['state'] = 'done'
+
+        self.write(cr, uid, ids, result)
+
+        return True
+
 
 manage_nfe()

@@ -55,13 +55,18 @@
 
             <separator string="" colspan="4" />
 
-            <group colspan="7" col="7">
+            <group colspan="4" col="4">
               <button special="cancel" string="Fechar" icon="gtk-cancel" />
               <button name="send_nfe" string="Enviar NF-e" type="object"
                 states="init" icon="gtk-go-forward" />
               <button name="justify_cancel" string="Cancelar NF-e"
                 type="object" states="init" icon="gtk-ok" />
               <button name="justify_destroy" string="Inutilizar Número de NF-e"
+                type="object" states="init" icon="gtk-ok" />
+            </group>
+            <group colspan="4" col="4">
+              <label colspan="1" width="200" />
+              <button name="generate_danfe" string="Gerar DANFE"
                 type="object" states="init" icon="gtk-ok" />
               <button name="check_nfe_status" string="Verificar Situação de NF-e"
                 type="object" states="init" icon="gtk-ok" />
