@@ -29,6 +29,11 @@ class account_invoice(osv.osv):
         'nfe_retorno': fields.char(
             u'Retorno da NF-e', size=256, readonly=True
             ),
+        'nfe_danfe': fields.binary(u'DANFE', readonly=True),
+        'nfe_danfe_name': fields.char(u'Nome do Arquivo', 128, readonly=True),
+        'nfe_sent_xml': fields.binary(u'XML de Envio', readonly=True),
+        'nfe_sent_xml_name': fields.char(u'Nome do Arquivo', 128,
+                                         readonly=True),
         }
 
 

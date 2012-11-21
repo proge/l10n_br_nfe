@@ -9,7 +9,7 @@
       <field name="arch" type="xml">
         <form string="NF-e">
 
-          <group col="5" states="init,down,failed,nothing,done,danfe_done">
+          <group col="5" states="init,down,failed,nothing,done">
 
             <group colspan="5" states="init">
               <label colspan="4" width="130"
@@ -31,12 +31,9 @@
               <label string="Nada a fazer." colspan="4" />
             </group>
 
-            <group colspan="5" states="done,danfe_done">
+            <group colspan="5" states="done">
               <label string="Operação realizada com sucesso."
                 colspan="4" />
-              <field name="file_name" invisible="1" states="danfe_done" />
-              <field name="file" colspan="4" states="danfe_done"
-                filename="file_name" />
             </group>
 
             <field name="invoice_status" colspan="4" nolabel="1"
@@ -47,23 +44,23 @@
                 <field name="company_id" />
                 <field name="nfe_status" />
                 <field name="nfe_retorno" />
+                <field name="nfe_danfe_name" invisible="1" />
+                <field name="nfe_danfe" filename="nfe_danfe_name"
+                  attrs="{'invisible':[('nfe_danfe','=','')]}" />
+                <field name="nfe_sent_xml_name" invisible="1" />
+                <field name="nfe_sent_xml" filename="nfe_sent_xml_name"
+                  attrs="{'invisible':[('nfe_sent_xml','=','')]}" />
               </tree>
             </field>
 
             <separator string="" colspan="4" />
 
-            <group colspan="5" col="5">
+            <group colspan="7" col="7">
               <button special="cancel" string="Fechar" icon="gtk-cancel" />
               <button name="send_nfe" string="Enviar NF-e" type="object"
                 states="init" icon="gtk-go-forward" />
-              <button name="generate_danfe" string="Gerar DANFE"
-                type="object" states="init" icon="gtk-ok" />
               <button name="justify_cancel" string="Cancelar NF-e"
                 type="object" states="init" icon="gtk-ok" />
-            </group>
-            
-            <group colspan="5" col="5">
-              <label colspan="1" width="200" />
               <button name="justify_destroy" string="Inutilizar Número de NF-e"
                 type="object" states="init" icon="gtk-ok" />
               <button name="check_nfe_status" string="Verificar Situação de NF-e"
