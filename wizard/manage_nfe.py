@@ -175,8 +175,8 @@ class manage_nfe(osv.osv_memory):
             p.certificado.senha = cert_password
             p.salvar_arquivos = True
             p.contingencia_SCAN = False
-            p.caminho = u''
-            #p.danfe.caminho = u'/tmp/danfe/'
+            p.caminho = u'/tmp/'
+            p.danfe.caminho = u'/tmp/'
 
             # Instancia uma NF-e
             n = NFe_200()
@@ -843,10 +843,10 @@ class manage_nfe(osv.osv_memory):
             if processo.resposta.cStat.valor in ['103', '104', '105']:
                 sent_invoices.append(inv.id)
                 data['nfe_status'] = NFE_STATUS['send_ok']
-                
+
                 file_content = p.danfe.conteudo_pdf
                 encoded_data = file_content.encode("base64")
-    
+
                 data['nfe_danfe'] = encoded_data
                 data['nfe_danfe_name'] = n.chave + '.pdf'
                 data['nfe_sent_xml'] = n.get_xml().encode("base64")
