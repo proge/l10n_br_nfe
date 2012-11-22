@@ -1340,6 +1340,8 @@ class manage_nfe(osv.osv_memory):
             n.gera_nova_chave()
             process = p.consultar_nota(chave_nfe=n.chave)
 
+            # TODO: checar retorno do servidor. nota precisa estar processada.
+
             process = p.montar_processo_uma_nota(
                 n, protnfe_recibo=process.resposta.protNFe
                 )
