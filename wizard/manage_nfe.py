@@ -35,13 +35,14 @@ from pysped_nfe import ProcessadorNFe
 from pysped_nfe.manual_401 import NFe_200, Det_200, Vol_200, Dup_200
 
 NFE_STATUS = {
-    'send_ok': 'Transmitida',
-    'send_failed': 'Falhou ao transmitir',
-    'cancel_ok': 'Cancelada',
-    'cancel_failed': 'Falhou ao cancelar',
-    'destroy_ok': 'Numeração inutilizada',
-    'destroy_failed': 'Falhou ao inutilizar numeração',
-    'check_nfe_failed': 'Falhou ao obter situação atual',
+    'send_ok': u'Transmitida',
+    'send_failed': u'Falhou ao transmitir',
+    'cancel_ok': u'Cancelada',
+    'cancel_failed': u'Falhou ao cancelar',
+    'destroy_ok': u'Numeração inutilizada',
+    'destroy_failed': u'Falhou ao inutilizar numeração',
+    'check_nfe_failed': u'Falhou ao obter situação atual',
+    'danfe_failed': u'Falhou ao gerar DANFE',
     }
 
 
@@ -845,10 +846,13 @@ class manage_nfe(osv.osv_memory):
                 data['nfe_status'] = NFE_STATUS['send_ok']
 
                 file_content = p.danfe.conteudo_pdf
-                encoded_data = file_content.encode("base64")
+                if file_content:
+                    encoded_data = file_content.encode("base64")
+                    data['nfe_danfe'] = encoded_data
+                    data['nfe_danfe_name'] = n.chave + '.pdf'
+                else:
+                    data['nfe_status'] = NFE_STATUS['danfe_failed']
 
-                data['nfe_danfe'] = encoded_data
-                data['nfe_danfe_name'] = n.chave + '.pdf'
                 data['nfe_sent_xml'] = n.get_xml().encode("base64")
                 data['nfe_sent_xml_name'] = n.chave + '.xml'
 
