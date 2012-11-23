@@ -856,7 +856,7 @@ class manage_nfe(osv.osv_memory):
                 data['nfe_sent_xml'] = n.get_xml().encode("base64")
                 data['nfe_sent_xml_name'] = n.chave + '.xml'
 
-            elif processo.resposta.cStat.valor in ['103', '105']:
+            elif processo.resposta.cStat.valor in ['100', '103', '105']:
                 sent_invoices.append(inv.id)
                 data['nfe_status'] = NFE_STATUS['send_ok']
 
@@ -1343,21 +1343,28 @@ class manage_nfe(osv.osv_memory):
             n.set_xml(inv.nfe_sent_xml.decode('base64'))
             n.gera_nova_chave()
             process = p.consultar_nota(chave_nfe=n.chave)
+            print process.resposta.cStat.valor
 
-            # TODO: checar retorno do servidor. nota precisa estar processada.
+            if process.resposta.cStat.valor == '100':
+                process = p.montar_processo_uma_nota(
+                    n, protnfe_recibo=process.resposta.protNFe
+                    )
 
-            process = p.montar_processo_uma_nota(
-                n, protnfe_recibo=process.resposta.protNFe
-                )
+                file_content = process.danfe_pdf
+                encoded_data = file_content.encode("base64")
+    
+                data = {
+                    'nfe_danfe': encoded_data,
+                    'nfe_danfe_name': n.chave + '.pdf',
+                    'nfe_retorno': unicode(process.protNFe.infProt.xMotivo.valor),
+                    'nfe_status': NFE_STATUS['send_ok'],
+                    }
 
-            file_content = process.danfe_pdf
-            encoded_data = file_content.encode("base64")
-
-            data = {
-                'nfe_danfe': encoded_data,
-                'nfe_danfe_name': n.chave + '.pdf',
-                'nfe_retorno': unicode(process.protNFe.infProt.xMotivo.valor),
-                }
+            else:
+                data = {
+                    'nfe_status': NFE_STATUS['danfe_failed'],
+                    'nfe_retorno': unicode(process.resposta.xMotivo.valor),
+                    }
 
             self.pool.get('account.invoice').write(cr,
                                                    uid,
