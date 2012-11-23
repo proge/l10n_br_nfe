@@ -1343,7 +1343,6 @@ class manage_nfe(osv.osv_memory):
             n.set_xml(inv.nfe_sent_xml.decode('base64'))
             n.gera_nova_chave()
             process = p.consultar_nota(chave_nfe=n.chave)
-            print process.resposta.cStat.valor
 
             if process.resposta.cStat.valor == '100':
                 process = p.montar_processo_uma_nota(
