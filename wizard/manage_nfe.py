@@ -421,9 +421,9 @@ class manage_nfe(osv.osv_memory):
                 # Detalhe
                 d = Det_200()
 
-                d.nItem.valor = 1
-
                 product_obj = inv_line.product_id
+
+                d.nItem.valor = i
 
                 if inv_line.product_id.code:
                     d.prod.cProd.valor = inv_line.product_id.code
