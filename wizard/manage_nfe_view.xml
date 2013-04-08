@@ -32,7 +32,7 @@
             </group>
 
             <group colspan="5" states="done">
-              <label string="Operação realizada com sucesso."
+              <label string="Operação finalizada."
                 colspan="4" />
             </group>
 
