@@ -31,8 +31,10 @@
     Module to support SPED NF-e.
     """,
     'depends': [
-        'l10n_br_sale',
+        'l10n_br_data_account',
+        'l10n_br_data_base',
         'l10n_br_delivery',
+        'l10n_br_sale',
         ],
     'data': [
         'account_invoice_view.xml',
