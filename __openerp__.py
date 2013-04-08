@@ -34,13 +34,11 @@
         'l10n_br_sale',
         'l10n_br_delivery',
         ],
-    'init_xml': [],
-    'update_xml': [
+    'data': [
         'account_invoice_view.xml',
         'wizard/manage_nfe_view.xml',
         ],
-    'demo_xml': [],
+    'demo': [],
     'test': [],
     'installable': True,
-    'active': False,
 }

@@ -5,40 +5,42 @@
     <record id="view_manage_nfe" model="ir.ui.view">
       <field name="name">NF-e</field>
       <field name="model">l10n_br_nfe.manage_nfe</field>
-      <field name="type">form</field>
       <field name="arch" type="xml">
-        <form string="NF-e">
+        <form string="NF-e" version="7.0">
 
-          <group col="5" states="init,down,failed,nothing,done">
+          <field name="state" invisible="1" />
 
-            <group colspan="5" states="init">
-              <label colspan="4" width="130"
-                string="Este assistente fornece ações para comunicação de NF-e." />
-              <field name="state" invisible="1" />
+          <group states="init,down,failed,nothing,done">
+
+            <group states="init">
+              <label width="130" for=""
+                string="Este assistente fornece ações para comunicação de NF-e, contanto que a nota fiscal esteja confirmada." />
             </group>
 
-            <group colspan="5" states="down">
+            <group states="down">
               <label string="Comunicação não pode ser realizada no momento."
-                colspan="4" />
+                for="" />
             </group>
 
-            <group colspan="5" states="failed">
+            <group states="failed">
               <label string="Algumas operações não puderam ser realizadas."
-                colspan="4" />
+                for="" />
             </group>
 
-            <group colspan="5" states="nothing">
-              <label string="Nada a fazer." colspan="4" />
+            <group states="nothing">
+              <label string="Nada a fazer." colspan="4" for="" />
             </group>
 
-            <group colspan="5" states="done">
-              <label string="Operação realizada com sucesso."
-                colspan="4" />
+            <group states="done">
+              <label string="Operação finalizada."
+                for="" />
             </group>
+            <newline />
 
-            <field name="invoice_status" colspan="4" nolabel="1"
-              mode="tree" width="550" height="200" readonly="1">
+            <field name="invoice_status" nolabel="1"
+              mode="tree" readonly="1">
               <tree string="Notas Fiscais">
+                <field name="state" invisible="1" />
                 <field name="number" />
                 <field name="partner_id" />
                 <field name="company_id" />
@@ -46,16 +48,25 @@
                 <field name="nfe_retorno" />
                 <field name="nfe_danfe_name" invisible="1" />
                 <field name="nfe_danfe" filename="nfe_danfe_name"
-                  attrs="{'invisible':[('nfe_danfe','=','')]}" />
+                attrs="{'invisible':[('nfe_danfe','=','')]}" />
                 <field name="nfe_sent_xml_name" invisible="1" />
                 <field name="nfe_sent_xml" filename="nfe_sent_xml_name"
-                  attrs="{'invisible':[('nfe_sent_xml','=','')]}" />
+                attrs="{'invisible':[('nfe_sent_xml','=','')]}" />
               </tree>
             </field>
 
-            <separator string="" colspan="4" />
+          </group>
 
-            <group colspan="4" col="4">
+          <div states="justify_cancel,justify_destroy">
+            <label string="Informe uma justificativa para realizar essa ação (entre 15 e 255 caracteres)."
+              for="" />
+            <field name="protocol_number" states="justify_cancel"
+              placeholder="Número do Protocolo de Autorização de Uso" />
+            <field name="justification" placeholder="Justificativa" />
+          </div>
+
+          <footer>
+            <div align="right" states="init,down,failed,nothing,done">
               <button special="cancel" string="Fechar" icon="gtk-cancel" />
               <button name="send_nfe" string="Enviar NF-e" type="object"
                 states="init" icon="gtk-go-forward" />
@@ -63,55 +74,45 @@
                 type="object" states="init" icon="gtk-ok" />
               <button name="justify_destroy" string="Inutilizar Número de NF-e"
                 type="object" states="init" icon="gtk-ok" />
-            </group>
-            <group colspan="4" col="4">
-              <label colspan="1" width="200" />
               <button name="generate_danfe" string="Gerar DANFE"
                 type="object" states="init" icon="gtk-ok" />
               <button name="check_nfe_status" string="Verificar Situação de NF-e"
                 type="object" states="init" icon="gtk-ok" />
               <button name="check_service_status" string="Verificar Situação do Serviço"
                 type="object" states="init" icon="gtk-ok" />
-            </group>
-
-          </group>
-
-          <group col="5" states="justify_cancel,justify_destroy">
-            <label string="Informe uma justificativa para realizar essa ação (entre 15 e 255 caracteres)."
-              colspan="4" />
-
-            <field name="protocol_number" colspan="5"
-              states="justify_cancel" />
-            <field name="justification" colspan="5" />
-
-            <group colspan="5" col="5">
-              <separator string="" colspan="5" />
-              <label colspan="1" width="200" />
+            </div>
+            <div align="right" states="justify_cancel,justify_destroy">
               <button name="justify_back" string="Voltar" type="object"
                 icon="gtk-cancel" />
               <button name="cancel_nfe" string="Confirmar cancelamento"
                 type="object" states="justify_cancel" icon="gtk-ok" />
               <button name="destroy_nfe_number" string="Confirmar inutilização"
                 type="object" states="justify_destroy" icon="gtk-ok" />
-            </group>
-          </group>
+            </div>
+          </footer>
 
         </form>
       </field>
     </record>
-
     <record id="action_view_manage_nfe" model="ir.actions.act_window">
       <field name="name">NF-e</field>
+      <field name="type">ir.actions.act_window</field>
       <field name="res_model">l10n_br_nfe.manage_nfe</field>
       <field name="view_type">form</field>
       <field name="view_mode">form</field>
+      <field name="view_id" ref="view_manage_nfe" />
       <field name="target">new</field>
     </record>
-
-    <act_window id="manage_nfe" key2="client_action_multi"
-      name="NF-e" res_model="l10n_br_nfe.manage_nfe" src_model="account.invoice"
-      view_id="view_manage_nfe" view_mode="form" target="new" view_type="form"
-      groups="base.group_extended" />
+    <act_window
+      name="NF-e"
+      id="manage_nfe"
+      key2="client_action_multi"
+      res_model="l10n_br_nfe.manage_nfe"
+      src_model="account.invoice"
+      view_mode="form"
+      view_type="form"
+      target="new"
+       />
 
   </data>
 </openerp>
