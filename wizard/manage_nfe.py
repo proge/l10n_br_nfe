@@ -224,6 +224,14 @@ class manage_nfe(osv.osv_memory):
                 company_partner.l10n_br_city_id.ibge_code
                 )
 
+            try:
+                int(inv.document_serie_id.code)
+            except ValueError:
+                raise osv.except_osv(
+                    u'Erro!',
+                    u'O código da série de documento fiscal deve ser numérico.'
+                    )
+
             n.infNFe.ide.indPag.valor = 2
             n.infNFe.ide.mod.valor = inv.fiscal_document_id.code
             n.infNFe.ide.serie.valor = inv.document_serie_id.code
@@ -323,10 +331,6 @@ class manage_nfe(osv.osv_memory):
                     inv.company_id.inscr_mun or ''
                     )
                 n.infNFe.emit.CNAE.valor = ''
-
-            print 'company.cnae_main_id.code -', inv.company_id.cnae_main_id.code
-            print 'cnae -', cnae
-            print 'CNAE.valor -', n.infNFe.emit.CNAE.valor
 
             # Regime tributário
             n.infNFe.emit.CRT.valor = inv.company_id.fiscal_type or ''
