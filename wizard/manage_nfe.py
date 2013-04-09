@@ -1006,7 +1006,7 @@ class manage_nfe(osv.osv_memory):
             p.certificado.senha = cert_password
             p.salvar_arquivos = True
             p.contingencia_SCAN = False
-            p.caminho = u''
+            p.caminho = u'/tmp/'
             p.ambiente = 2
 
             today = datetime.datetime.now()
@@ -1103,7 +1103,7 @@ class manage_nfe(osv.osv_memory):
             p.certificado.senha = cert_password
             p.salvar_arquivos = True
             p.contingencia_SCAN = False
-            p.caminho = u''
+            p.caminho = u'/tmp/'
 
             process = p.inutilizar_nota(
                 cnpj=re.sub(
@@ -1184,7 +1184,7 @@ class manage_nfe(osv.osv_memory):
             p.certificado.senha = cert_password
             p.salvar_arquivos = True
             p.contingencia_SCAN = False
-            p.caminho = u''
+            p.caminho = u'/tmp/'
 
             n = NFe_200()
             n.infNFe.ide.cUF.valor = company_partner.state_id.ibge_code
@@ -1269,7 +1269,7 @@ class manage_nfe(osv.osv_memory):
                 p.certificado.senha = cert_password
                 p.salvar_arquivos = True
                 p.contingencia_SCAN = False
-                p.caminho = u''
+                p.caminho = u'/tmp/'
 
                 process = p.consultar_servico()
 
