@@ -299,11 +299,12 @@ class manage_nfe(osv.osv_memory):
             n.infNFe.emit.enderEmit.xPais.valor = self._unaccent(
                 company_partner.country_id.name or ''
                 )
-            n.infNFe.emit.enderEmit.fone.valor = re.sub(
-                '[%s]' % re.escape(string.punctuation),
-                '',
-                str(company_partner.phone or '').replace(' ', '')
-                )
+            if company_partner.phone and len(company_partner.phone) > 6:
+                n.infNFe.emit.enderEmit.fone.valor = re.sub(
+                    '[%s]' % re.escape(string.punctuation),
+                    '',
+                    str(company_partner.phone or '').replace(' ', '')
+                    )
             n.infNFe.emit.IE.valor = re.sub(
                 '[%s]' % re.escape(string.punctuation),
                 '',
@@ -394,11 +395,12 @@ class manage_nfe(osv.osv_memory):
             n.infNFe.dest.enderDest.xPais.valor = self._unaccent(
                 inv.partner_id.country_id.name or ''
                 )
-            n.infNFe.dest.enderDest.fone.valor = re.sub(
-                '[%s]' % re.escape(string.punctuation),
-                '',
-                str(inv.partner_id.phone or '').replace(' ', '')
-                )
+            if inv.partner_id.phone and len(inv.partner_id.phone) > 6:
+                n.infNFe.dest.enderDest.fone.valor = re.sub(
+                    '[%s]' % re.escape(string.punctuation),
+                    '',
+                    str(inv.partner_id.phone or '').replace(' ', '')
+                    )
             n.infNFe.dest.IE.valor = re.sub(
                 '[%s]' % re.escape(string.punctuation),
                 '',
@@ -875,11 +877,13 @@ class manage_nfe(osv.osv_memory):
                 pass
 
             data = {
-                'nfe_retorno': unicode(processo.resposta.xMotivo.valor),
+                'nfe_retorno': unicode(
+                    processo.resposta.protNFe[0].infProt.xMotivo.valor
+                    ),
                 'nfe_access_key': n.chave
                 }
 
-            if processo.resposta.cStat.valor == '104':
+            if processo.resposta.protNFe[0].infProt.cStat.valor == '100':
                 sent_invoices.append(inv.id)
                 data['nfe_status'] = NFE_STATUS['send_ok']
 
@@ -894,7 +898,7 @@ class manage_nfe(osv.osv_memory):
                 data['nfe_sent_xml'] = n.get_xml().encode("base64")
                 data['nfe_sent_xml_name'] = n.chave + '.xml'
 
-            elif processo.resposta.cStat.valor in ['100', '103', '105']:
+            elif processo.resposta.protNFe[0].infProt.cStat.valor in ['103', '104', '105']:
                 sent_invoices.append(inv.id)
                 data['nfe_status'] = NFE_STATUS['send_ok']
 
@@ -905,12 +909,9 @@ class manage_nfe(osv.osv_memory):
                 unsent_invoices.append(inv.id)
                 data['nfe_status'] = NFE_STATUS['send_failed']
 
-            self.pool.get('account.invoice').write(cr,
-                                                   uid,
-                                                   inv.id,
-                                                   data,
-                                                   context=context
-                                                   )
+            self.pool.get('account.invoice').write(
+                cr, uid, inv.id, data, context=context
+                )
 
         if len(sent_invoices) == 0 and len(unsent_invoices) == 0:
             result['state'] = 'nothing'
@@ -1282,11 +1283,20 @@ class manage_nfe(osv.osv_memory):
                     tree = lxml.etree.parse(
                         StringIO(process.resposta.original), parser
                         )
-                    raise osv.except_osv(
-                        u'Erro de comunicação.',
-                        u'Resposta retornada pelo sistema:\n%s' % \
-                        tree.find(".//title").text
-                        )
+                    if tree.find(".//title"):
+                        raise osv.except_osv(
+                            u'Erro de comunicação.',
+                            u'Resposta retornada pelo sistema:\n%s' % \
+                            tree.find(".//title").text
+                            )
+                    else:
+                        raise osv.except_osv(
+                            u'Erro de comunicação.',
+                            u'Resposta retornada pelo sistema:\n{} ({})'.format(
+                                process.resposta.reason,
+                                process.resposta.status
+                                )
+                            )
 
                 if process.resposta.cStat.valor == '107':
                     company_services_up.append(inv.company_id.id)
