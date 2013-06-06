@@ -998,17 +998,20 @@ class manage_nfe(osv.osv_memory):
             n.infNFe.ide.tpEmis.valor = 1
             n.gera_nova_chave()
 
-            process = p.cancelar_nota(
+            process = p.cancelar_nota_evento(
                 chave_nfe=n.chave,
                 numero_protocolo=unicode(protocol_number),
                 justificativa=justification
                 )
 
             data = {
-                'nfe_retorno': unicode(process.resposta.infCanc.xMotivo.valor)
+                'nfe_retorno': unicode(
+                    process.resposta.retEvento[0].infEvento.xMotivo.valor
+                    )
                 }
 
-            if process.resposta.infCanc.cStat.valor == '101':
+            if process.resposta.retEvento[0].infEvento.cStat.valor in ('135',
+                                                                       '136'):
                 canceled_invoices.append(inv.id)
                 data['nfe_status'] = NFE_STATUS['cancel_ok']
 
