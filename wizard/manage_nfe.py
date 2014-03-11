@@ -876,12 +876,18 @@ class manage_nfe(osv.osv_memory):
             for processo in p.processar_notas([n]):
                 pass
 
-            data = {
-                'nfe_retorno': unicode(
-                    processo.resposta.protNFe[0].infProt.xMotivo.valor
-                    ),
-                'nfe_access_key': n.chave
-                }
+            try:
+                data = {
+                    'nfe_retorno': unicode(
+                        processo.resposta.protNFe[0].infProt.xMotivo.valor
+                        ),
+                    'nfe_access_key': n.chave
+                    }
+            except AttributeError:
+                raise osv.except_osv(
+                    u'Não foi possível emitir a NF-e',
+                    u'Certificado inválido',
+                    )
 
             if processo.resposta.protNFe[0].infProt.cStat.valor == '100':
                 sent_invoices.append(inv.id)
